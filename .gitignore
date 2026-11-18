@@ -1,0 +1,26 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local agent/task scratch files
+.scratch/
+
+# IDE and editor state
+.idea/
+.vscode/
+*.iml
+
+# Maven build output
+target/
+
+# Logs, JVM crash dumps, and temporary files
+*.log
+hs_err_pid*
+*.hprof
+*.tmp
+
+# Operating system files
+.DS_Store
+Thumbs.db
+*.log

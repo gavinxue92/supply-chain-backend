@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: supply-chain-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3307/supply_chain?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+
+app:
+  media:
+    storage:
+      endpoint: ${APP_MEDIA_STORAGE_ENDPOINT:http://localhost:9000}
+      public-endpoint: ${APP_MEDIA_STORAGE_PUBLIC_ENDPOINT:http://localhost:9000}
+      access-key: ${APP_MEDIA_STORAGE_ACCESS_KEY:${MINIO_ROOT_USER:}}
+      secret-key: ${APP_MEDIA_STORAGE_SECRET_KEY:${MINIO_ROOT_PASSWORD:}}
+      region: ${APP_MEDIA_STORAGE_REGION:us-east-1}
+      bucket: ${APP_MEDIA_STORAGE_BUCKET:product-media}
+      upload-expiration-seconds: ${APP_MEDIA_UPLOAD_EXPIRATION_SECONDS:300}
+      public-base-url: ${APP_MEDIA_PUBLIC_BASE_URL:http://localhost:8080}
+  security:
+    cookie-secure: ${APP_COOKIE_SECURE:true}
+    allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173}
+    lock-duration: ${APP_LOCK_DURATION:PT15M}
+    login-rate-limit:
+      max-attempts: ${APP_LOGIN_RATE_LIMIT_MAX_ATTEMPTS:10}
+      window: ${APP_LOGIN_RATE_LIMIT_WINDOW:PT1M}
+
+springdoc:
+  api-docs:
+    path: /api/v1/openapi
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED:true}
+    config-url: /api/v1/openapi/swagger-config
+    url: /api/v1/openapi
+    disable-swagger-default-url: true
