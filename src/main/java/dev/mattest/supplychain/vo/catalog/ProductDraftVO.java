@@ -11,6 +11,9 @@ public record ProductDraftVO(
         Long mainImageMediaId,
         List<Long> galleryMediaIds,
         List<String> keywords,
+        String contactMode,
+        String contactWechatId,
+        Long contactQrMediaId,
         int sortOrder,
         List<ProductSpecVO> specifications) {
 }

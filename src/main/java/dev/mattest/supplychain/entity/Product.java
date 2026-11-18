@@ -15,6 +15,9 @@ public class Product {
     private Long categoryId;
     private Long mainImageMediaId;
     private String detailHtml;
+    private String contactMode;
+    private String contactWechatId;
+    private Long contactQrMediaId;
     private Integer sortOrder;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -32,6 +35,12 @@ public class Product {
     public void setMainImageMediaId(Long mainImageMediaId) { this.mainImageMediaId = mainImageMediaId; }
     public String getDetailHtml() { return detailHtml; }
     public void setDetailHtml(String detailHtml) { this.detailHtml = detailHtml; }
+    public String getContactMode() { return contactMode; }
+    public void setContactMode(String contactMode) { this.contactMode = contactMode; }
+    public String getContactWechatId() { return contactWechatId; }
+    public void setContactWechatId(String contactWechatId) { this.contactWechatId = contactWechatId; }
+    public Long getContactQrMediaId() { return contactQrMediaId; }
+    public void setContactQrMediaId(Long contactQrMediaId) { this.contactQrMediaId = contactQrMediaId; }
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
     public LocalDateTime getCreatedAt() { return createdAt; }

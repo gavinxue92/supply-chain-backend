@@ -352,6 +352,185 @@ class CatalogAdministrationIntegrationTest {
                 new ParameterizedTypeReference<>() {});
         assertThat(getData(updatedPublicDetail)).containsEntry("name", "牛腩（更新）");
 
+        ResponseEntity<String> editorGlobalContact = rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.PUT,
+                jsonEntity(Map.of("wechatId", "editor-must-not-change"), editorHeaders),
+                String.class);
+        assertThat(editorGlobalContact.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.GET,
+                new HttpEntity<>(editorHeaders),
+                String.class).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        HttpHeaders rootAdminHeaders = authenticatedHeaders(
+                login("root-admin", "A-strong-test-password-123!", csrf), csrf);
+        ResponseEntity<Map<String, Object>> initialGlobalContact = rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.PUT,
+                jsonEntity(Map.of("wechatId", "global-one", "qrMediaId", mediaId), rootAdminHeaders),
+                new ParameterizedTypeReference<>() {});
+        assertThat(initialGlobalContact.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertAuditRecorded("GLOBAL_CONTACT_UPDATED", "global_contact_configs",
+                number(getData(initialGlobalContact).get("id")));
+        assertThat(getData(rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.GET,
+                new HttpEntity<>(rootAdminHeaders),
+                new ParameterizedTypeReference<Map<String, Object>>() {})))
+                .containsEntry("wechatId", "global-one");
+        Map<String, Object> initialPublicDetail = getData(rest.exchange(
+                url("/api/v1/products/" + publishedProductId),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<Map<String, Object>>() {}));
+        assertThat(asMap(initialPublicDetail.get("contact")))
+                .containsEntry("wechatId", "global-one")
+                .containsEntry("qrImageUrl", "/api/v1/media/" + mediaId);
+
+        long prefixLowSortId = createAndPublishProduct(
+                "牛腩卷", enabledLeafId, List.of("牛腩卷别名"), 2, mediaId, editorHeaders);
+        long prefixHighSortId = createAndPublishProduct(
+                "牛腩片", enabledLeafId, List.of("牛腩片别名"), 9, mediaId, editorHeaders);
+        long aliasId = createAndPublishProduct(
+                "安格斯牛肉", enabledLeafId, List.of("牛腩"), 1, mediaId, editorHeaders);
+        long exactNameId = createAndPublishProduct(
+                "牛腩", enabledLeafId, List.of(), 50, mediaId, editorHeaders);
+        Map<String, Object> otherRoot = createCategory("冷冻食材", null, 3, editorHeaders);
+        long otherLeafId = number(createCategory(
+                "牛肉", number(otherRoot.get("id")), 0, editorHeaders).get("id"));
+        createAndPublishProduct(
+                "进口牛肉", otherLeafId, List.of("牛腩"), 0, mediaId, editorHeaders);
+
+        ResponseEntity<Map<String, Object>> searchResults = rest.exchange(
+                url("/api/v1/products/search?q=牛腩"),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<>() {});
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> matchedProducts =
+                (List<Map<String, Object>>) searchResults.getBody().get("data");
+        assertThat(number(matchedProducts.getFirst().get("id"))).isEqualTo(exactNameId);
+        assertThat(matchedProducts).extracting(product -> number(product.get("id")))
+                .containsSubsequence(prefixLowSortId, publishedProductId, prefixHighSortId, aliasId);
+
+        ResponseEntity<Map<String, Object>> parentFilteredSearch = rest.exchange(
+                url("/api/v1/products/search?q=牛腩&categoryId=" + enabledRootId),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<>() {});
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> parentMatches =
+                (List<Map<String, Object>>) parentFilteredSearch.getBody().get("data");
+        assertThat(parentMatches).extracting(product -> number(product.get("id")))
+                .doesNotContain(matchedProducts.stream()
+                        .filter(product -> "进口牛肉".equals(product.get("name")))
+                        .map(product -> number(product.get("id")))
+                        .findFirst()
+                        .orElseThrow());
+        assertThat(parentMatches).extracting(product -> number(product.get("id")))
+                .contains(aliasId);
+
+        ResponseEntity<String> emptyGlobalContact = rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.PUT,
+                jsonEntity(Map.of("wechatId", " "), rootAdminHeaders),
+                String.class);
+        assertThat(emptyGlobalContact.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponseEntity<String> invalidQrContact = rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.PUT,
+                jsonEntity(Map.of("qrMediaId", Long.MAX_VALUE), rootAdminHeaders),
+                String.class);
+        assertThat(invalidQrContact.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        Map<String, Object> invalidOverrideRequest = productRequest(
+                "牛腩（更新）", enabledLeafId, List.of("牛腩"),
+                List.of(mapWithNullablePrice("500g", null)));
+        invalidOverrideRequest.put("contactMode", "OVERRIDE");
+        ResponseEntity<String> invalidProductOverride = rest.exchange(
+                url("/api/v1/admin/products/" + publishedProductId),
+                HttpMethod.PUT,
+                jsonEntity(invalidOverrideRequest, editorHeaders),
+                String.class);
+        assertThat(invalidProductOverride.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.PUT,
+                jsonEntity(Map.of("wechatId", "global-two"), rootAdminHeaders),
+                new ParameterizedTypeReference<Map<String, Object>>() {});
+        Map<String, Object> updatedInheritedOriginal = getData(rest.exchange(
+                url("/api/v1/products/" + publishedProductId),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<Map<String, Object>>() {}));
+        assertThat(asMap(updatedInheritedOriginal.get("contact")))
+                .containsEntry("wechatId", "global-two")
+                .doesNotContainKey("qrImageUrl");
+        Map<String, Object> inheritedAfterUpdate = getData(rest.exchange(
+                url("/api/v1/products/" + aliasId),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<Map<String, Object>>() {}));
+        assertThat(asMap(inheritedAfterUpdate.get("contact")))
+                .containsEntry("wechatId", "global-two")
+                .doesNotContainKey("qrImageUrl");
+
+        Map<String, Object> productOverride = productRequest(
+                "牛腩（更新）", enabledLeafId, List.of("牛腩"),
+                List.of(mapWithNullablePrice("500g", null)));
+        productOverride.put("mainImageMediaId", mediaId);
+        productOverride.put("contactMode", "OVERRIDE");
+        productOverride.put("contactWechatId", "product-only");
+        ResponseEntity<Map<String, Object>> savedOverride = rest.exchange(
+                url("/api/v1/admin/products/" + publishedProductId),
+                HttpMethod.PUT,
+                jsonEntity(productOverride, editorHeaders),
+                new ParameterizedTypeReference<>() {});
+        assertThat(savedOverride.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertAuditRecorded("PRODUCT_UPDATED", "products", publishedProductId);
+        rest.exchange(
+                url("/api/v1/admin/contact/global"),
+                HttpMethod.PUT,
+                jsonEntity(Map.of("wechatId", "global-three", "qrMediaId", mediaId), rootAdminHeaders),
+                new ParameterizedTypeReference<Map<String, Object>>() {});
+        Map<String, Object> overriddenDetail = getData(rest.exchange(
+                url("/api/v1/products/" + publishedProductId),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<Map<String, Object>>() {}));
+        assertThat(asMap(overriddenDetail.get("contact")))
+                .containsEntry("wechatId", "product-only")
+                .doesNotContainKey("qrImageUrl");
+        Map<String, Object> inheritedDetail = getData(rest.exchange(
+                url("/api/v1/products/" + aliasId),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<Map<String, Object>>() {}));
+        assertThat(asMap(inheritedDetail.get("contact")))
+                .containsEntry("wechatId", "global-three")
+                .containsEntry("qrImageUrl", "/api/v1/media/" + mediaId);
+
+        Map<String, Object> disabledContactRequest = productRequest(
+                "安格斯牛肉", enabledLeafId, List.of("牛腩"),
+                List.of(mapWithNullablePrice("500g", null)));
+        disabledContactRequest.put("mainImageMediaId", mediaId);
+        disabledContactRequest.put("contactMode", "DISABLED");
+        ResponseEntity<Map<String, Object>> disabledContact = rest.exchange(
+                url("/api/v1/admin/products/" + aliasId),
+                HttpMethod.PUT,
+                jsonEntity(disabledContactRequest, editorHeaders),
+                new ParameterizedTypeReference<>() {});
+        assertThat(disabledContact.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, Object> disabledDetail = getData(rest.exchange(
+                url("/api/v1/products/" + aliasId),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<Map<String, Object>>() {}));
+        assertThat(disabledDetail).doesNotContainKey("contact");
+
         ResponseEntity<String> hideTree = rest.exchange(
                 url("/api/v1/admin/categories/" + enabledRootId + "/status"),
                 HttpMethod.PATCH,
@@ -371,6 +550,17 @@ class CatalogAdministrationIntegrationTest {
                 HttpEntity.EMPTY,
                 String.class);
         assertThat(hiddenProduct.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        ResponseEntity<Map<String, Object>> hiddenTreeSearch = rest.exchange(
+                url("/api/v1/products/search?q=牛腩"),
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<>() {});
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> hiddenTreeMatches =
+                (List<Map<String, Object>>) hiddenTreeSearch.getBody().get("data");
+        assertThat(hiddenTreeMatches).extracting(product -> number(product.get("id")))
+                .doesNotContain(publishedProductId, prefixLowSortId, prefixHighSortId,
+                        aliasId, exactNameId);
         ResponseEntity<Map<String, Object>> stillPublished = rest.exchange(
                 url("/api/v1/admin/products/" + publishedProductId),
                 HttpMethod.GET,
@@ -412,8 +602,6 @@ class CatalogAdministrationIntegrationTest {
                 new HttpEntity<>(editorHeaders),
                 new ParameterizedTypeReference<>() {});
         assertThat(getData(republished)).containsEntry("status", "PUBLISHED");
-        HttpHeaders rootAdminHeaders = authenticatedHeaders(
-                login("root-admin", "A-strong-test-password-123!", csrf), csrf);
         ResponseEntity<Map<String, Object>> archived = rest.exchange(
                 url("/api/v1/admin/products/" + publishedProductId + "/archive"),
                 HttpMethod.POST,
@@ -454,6 +642,31 @@ class CatalogAdministrationIntegrationTest {
         return getData(response);
     }
 
+    private long createAndPublishProduct(
+            String name,
+            long categoryId,
+            List<String> keywords,
+            int sortOrder,
+            long mediaId,
+            HttpHeaders headers) {
+        Map<String, Object> request = productRequest(
+                name,
+                categoryId,
+                keywords,
+                List.of(mapWithNullablePrice("500g", null)));
+        request.put("sortOrder", sortOrder);
+        request.put("mainImageMediaId", mediaId);
+        long productId = number(createDraft(request, headers).get("id"));
+        ResponseEntity<Map<String, Object>> published = rest.exchange(
+                url("/api/v1/admin/products/" + productId + "/publish"),
+                HttpMethod.POST,
+                new HttpEntity<>(headers),
+                new ParameterizedTypeReference<>() {});
+        assertThat(published.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getData(published)).containsEntry("status", "PUBLISHED");
+        return productId;
+    }
+
     private Map<String, Object> categoryRequest(String name, Long parentId, int sortOrder) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("name", name);
@@ -486,6 +699,11 @@ class CatalogAdministrationIntegrationTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) response.getBody().get("data");
         return data;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> asMap(Object value) {
+        return (Map<String, Object>) value;
     }
 
     private long number(Object value) {

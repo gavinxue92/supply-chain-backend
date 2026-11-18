@@ -9,5 +9,6 @@ import java.util.List;
 public interface PublicCatalogService {
     List<PublicCategoryVO> listCategories();
     List<PublicProductSummaryVO> listProducts(long categoryId);
+    List<PublicProductSummaryVO> searchProducts(String query, Long categoryId);
     PublicProductDetailVO getProduct(long productId);
 }

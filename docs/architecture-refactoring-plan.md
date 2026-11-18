@@ -26,6 +26,7 @@
 - 分类管理和产品草稿管理已新增标准 Controller/Service/Mapper/Entity/DTO/VO 分层，并为关键变更写入审计；分类可软删除后复用同级名称。产品上架/下架、归档/恢复和公开目录接口及 HTTP 集成测试代码已实现；Maven package 通过，Testcontainers HTTP 验收受本机 Docker Engine API 返回空 Engine 元数据阻断。
 - 数据库不再由应用自动迁移；新环境先执行 `scripts/create-database.sql`，再执行 `scripts/schema.sql`。Docker Compose 仅在 MySQL 数据卷首次初始化时自动执行建表脚本；已有数据卷不会自动套用脚本变更。Testcontainers 测试直接执行建表 SQL。
 - 分类/草稿及媒体/产品完整内容 Maven package 通过；相关 HTTP 行为已在隔离的本地 MySQL、MinIO 环境验证。媒体 Testcontainers 测试因本机 Docker pipe 返回空 Engine 信息而未能执行。
+- 产品搜索/排序、分类树筛选及全局/产品客服策略 API 已实现并补充 HTTP 集成测试代码；Maven package 通过，Testcontainers HTTP 验收仍受本机 Docker Engine API 返回空 Engine 元数据阻断。
 
 ## 分片重构顺序
 
@@ -37,7 +38,7 @@
 | 2 | 安全认证、会话与初始化 | 将会话过滤器迁至 `security`；创建认证 Service、Mapper、Entity、DTO/VO；迁移登录、登出、改密、限流、密码校验；通过本地 SQL 脚本初始化临时管理员；删除该模块 `JdbcTemplate` | 认证相关 HTTP 端点的成功、未授权、限流/验证及会话行为接口测试通过；编译通过；认证相关现有接口测试通过 | 完成；HTTP 验证通过 |
 | 3 | 管理员账号与审计 | 将账号 Controller 精简为路由/校验/Service 调用；通过 Mapper 实现账号和审计读写；将内嵌 record 移至 DTO/VO；使用统一响应和异常处理 | 账号列表、创建、停用、重置密码和权限错误等受影响 HTTP 契约测试通过；编译通过；该模块现有接口测试通过 | 完成；HTTP 验证通过 |
 | 4 | 分类目录 | 新增分类 Entity、Mapper、DTO/VO、Service 和 Controller；落实层级、启停、排序、唯一性和删除限制 | 分类公开/管理端接口契约覆盖成功与关键拒绝场景；编译通过；该模块接口测试通过 | 管理端及公开接口已实现；Maven package 通过；Testcontainers 验收受本机 Docker Engine 阻断 |
-| 5 | 产品目录与规格报价 | 新增产品、规格、关键词等实体及分层；实现草稿/上架/下架/归档、分类归属和报价接口 | 产品列表/搜索/详情及管理端产品接口契约通过；编译通过；该模块接口测试通过 | 草稿、生命周期及公开分类/产品列表与详情已实现；Maven package 通过，HTTP 集成测试代码已补充；测试运行受本机 Docker Engine API 返回空 Engine 元数据阻断；搜索和客服展示待工单 05 |
+| 5 | 产品目录与规格报价 | 新增产品、规格、关键词等实体及分层；实现草稿/上架/下架/归档、分类归属和报价接口 | 产品列表/搜索/详情及管理端产品接口契约通过；编译通过；该模块接口测试通过 | 草稿、生命周期、公开分类/产品列表与详情、搜索排序及客服展示已实现；Maven package 通过，HTTP 集成测试代码已补充；测试运行受本机 Docker Engine API 返回空 Engine 元数据阻断 |
 | 6 | 图片资源与客服配置 | 按相同分层新增媒体资源、全局客服及产品客服接口；落实上传授权/确认、配置继承和关闭策略 | 图片和客服配置相关 HTTP 契约及关键失败响应通过接口测试；编译通过；该模块接口测试通过 | 媒体资源上传/确认、公开读取及产品图片关联已实现并通过本地 HTTP 验收；自动化容器测试受本机 Docker pipe 配置阻断；客服配置待后续 |
 
 ## 每片验证规则

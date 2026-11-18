@@ -87,6 +87,7 @@ public class ProductDraftServiceImpl implements ProductDraftService {
         product.setCategoryId(request.categoryId());
         product.setMainImageMediaId(request.mainImageMediaId());
         product.setDetailHtml(detail.html());
+        applyContactStrategy(product, request);
         product.setSortOrder(request.sortOrder() == null ? 0 : request.sortOrder());
         productMapper.insert(product);
         replaceSpecifications(product.getId(), request.specifications());
@@ -107,6 +108,7 @@ public class ProductDraftServiceImpl implements ProductDraftService {
         product.setCategoryId(request.categoryId());
         product.setMainImageMediaId(request.mainImageMediaId());
         product.setDetailHtml(detail.html());
+        applyContactStrategy(product, request);
         product.setSortOrder(request.sortOrder() == null ? 0 : request.sortOrder());
         productMapper.updateById(product);
         replaceSpecifications(id, request.specifications());
@@ -281,6 +283,41 @@ public class ProductDraftServiceImpl implements ProductDraftService {
         }
     }
 
+    private void applyContactStrategy(Product product, ProductDraftRequest request) {
+        String mode = request.contactMode() == null ? "INHERIT" : request.contactMode();
+        String wechatId = normalizeContactText(request.contactWechatId());
+        Long qrMediaId = request.contactQrMediaId();
+
+        if ("OVERRIDE".equals(mode)) {
+            if (wechatId == null && qrMediaId == null) {
+                throw badRequest("Product contact override must provide a WeChat ID or QR code");
+            }
+            if (qrMediaId != null && mediaResourceMapper.selectCount(
+                    new LambdaQueryWrapper<MediaResource>()
+                            .eq(MediaResource::getId, qrMediaId)
+                            .eq(MediaResource::getResourceStatus, "READY")) != 1) {
+                throw badRequest("The product customer-service QR code must reference confirmed media");
+            }
+        } else if ("INHERIT".equals(mode) || "DISABLED".equals(mode)) {
+            if (wechatId != null || qrMediaId != null) {
+                throw badRequest("Only product contact overrides may contain contact details");
+            }
+        } else {
+            throw badRequest("Unsupported product customer-service strategy");
+        }
+
+        product.setContactMode(mode);
+        product.setContactWechatId("OVERRIDE".equals(mode) ? wechatId : null);
+        product.setContactQrMediaId("OVERRIDE".equals(mode) ? qrMediaId : null);
+    }
+
+    private String normalizeContactText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private ProductDetailSanitizer.SanitizedDetail validateContentMedia(
             long actorId, ProductDraftRequest request) {
         ProductDetailSanitizer.SanitizedDetail detail =
@@ -376,6 +413,9 @@ public class ProductDraftServiceImpl implements ProductDraftService {
                 product.getMainImageMediaId(),
                 galleryMediaIds,
                 keywords,
+                product.getContactMode(),
+                product.getContactWechatId(),
+                product.getContactQrMediaId(),
                 product.getSortOrder(),
                 specifications);
     }
@@ -395,18 +435,21 @@ public class ProductDraftServiceImpl implements ProductDraftService {
             Product product,
             ProductDraftRequest request,
             ProductDetailSanitizer.SanitizedDetail detail) {
-        return Map.of(
-                "name", product.getName() == null ? "" : product.getName(),
-                "categoryId", product.getCategoryId() == null ? "" : product.getCategoryId(),
-                "mainImageMediaId",
-                product.getMainImageMediaId() == null ? "" : product.getMainImageMediaId(),
-                "galleryImageCount",
-                request.galleryMediaIds() == null ? 0 : request.galleryMediaIds().size(),
-                "detailImageCount", detail.mediaIds().size(),
-                "keywordCount", request.keywords() == null ? 0 : request.keywords().size(),
-                "specificationCount",
-                request.specifications() == null ? 0 : request.specifications().size(),
-                "sortOrder", product.getSortOrder());
+        return Map.ofEntries(
+                Map.entry("name", product.getName() == null ? "" : product.getName()),
+                Map.entry("categoryId", product.getCategoryId() == null ? "" : product.getCategoryId()),
+                Map.entry("mainImageMediaId",
+                        product.getMainImageMediaId() == null ? "" : product.getMainImageMediaId()),
+                Map.entry("galleryImageCount",
+                        request.galleryMediaIds() == null ? 0 : request.galleryMediaIds().size()),
+                Map.entry("detailImageCount", detail.mediaIds().size()),
+                Map.entry("keywordCount", request.keywords() == null ? 0 : request.keywords().size()),
+                Map.entry("contactMode", product.getContactMode()),
+                Map.entry("hasContactWechatId", product.getContactWechatId() != null),
+                Map.entry("hasContactQrCode", product.getContactQrMediaId() != null),
+                Map.entry("specificationCount",
+                        request.specifications() == null ? 0 : request.specifications().size()),
+                Map.entry("sortOrder", product.getSortOrder()));
     }
 
     private ResponseStatusException badRequest(String message) {

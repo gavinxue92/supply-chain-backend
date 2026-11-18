@@ -1,5 +1,7 @@
 package dev.mattest.supplychain.vo.catalog;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 
 public record PublicProductDetailVO(
@@ -10,5 +12,6 @@ public record PublicProductDetailVO(
         List<String> galleryImageUrls,
         String detailHtml,
         List<PublicProductSpecVO> specifications,
-        String referencePriceNotice) {
+        String referencePriceNotice,
+        @JsonInclude(JsonInclude.Include.NON_NULL) ContactDisplayVO contact) {
 }
