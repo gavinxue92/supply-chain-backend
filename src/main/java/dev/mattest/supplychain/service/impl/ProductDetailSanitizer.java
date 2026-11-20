@@ -46,6 +46,22 @@ public class ProductDetailSanitizer {
         return new SanitizedDetail(cleaned, imageIds);
     }
 
+    public Set<Long> extractMediaIds(String html) {
+        if (html == null || html.isBlank()) {
+            return Set.of();
+        }
+        Set<Long> mediaIds = new LinkedHashSet<>();
+        Matcher matcher = MEDIA_PATH.matcher(html);
+        while (matcher.find()) {
+            try {
+                mediaIds.add(Long.parseLong(matcher.group(1)));
+            } catch (NumberFormatException ignored) {
+                // Ignore references that cannot be parsed; sanitization rejects them on write.
+            }
+        }
+        return mediaIds;
+    }
+
     public record SanitizedDetail(String html, Set<Long> mediaIds) {
     }
 }

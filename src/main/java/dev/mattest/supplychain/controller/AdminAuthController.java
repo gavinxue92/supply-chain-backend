@@ -7,6 +7,7 @@ import dev.mattest.supplychain.security.AdminPrincipal;
 import dev.mattest.supplychain.security.AdminSessionFilter;
 import dev.mattest.supplychain.service.AdminAuthService;
 import dev.mattest.supplychain.vo.auth.CsrfVO;
+import dev.mattest.supplychain.vo.auth.CurrentAdminVO;
 import dev.mattest.supplychain.vo.auth.LoginVO;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
@@ -45,6 +46,14 @@ public class AdminAuthController {
     @GetMapping("/csrf")
     public Result<CsrfVO> csrf(CsrfToken csrfToken) {
         return Result.success(new CsrfVO(csrfToken.getToken()));
+    }
+
+    @GetMapping("/me")
+    @SecurityRequirement(name = "adminSession")
+    public Result<CurrentAdminVO> currentUser(
+            @AuthenticationPrincipal AdminPrincipal principal) {
+        return Result.success(new CurrentAdminVO(
+                principal.username(), principal.nickname(), principal.role(), principal.mustChangePassword()));
     }
 
     @PostMapping("/login")

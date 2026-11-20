@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$schemaPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\main\resources\db\migration\V1__initial_schema.sql'
+$schemaPath = Join-Path $PSScriptRoot 'schema.sql'
 if (-not (Test-Path -LiteralPath $schemaPath -PathType Leaf)) {
     throw "Schema migration not found: $schemaPath"
 }
@@ -18,8 +18,11 @@ $expectedTables = @(
     'admin_sessions',
     'media_resources',
     'categories',
+    'customer_services',
     'global_contact_configs',
+    'global_contact_services',
     'products',
+    'product_contact_services',
     'product_specs',
     'product_keywords',
     'product_gallery',
@@ -41,6 +44,24 @@ foreach ($table in $expectedTables) {
 
 if ($sql -notmatch '(?i)reference_price\s+DECIMAL\s*\(\s*10\s*,\s*2\s*\)') {
     throw 'Reference prices must use DECIMAL(10,2)'
+}
+if ($sql -notmatch '(?im)^\s*nickname\s+VARCHAR\s*\(\s*50\s*\)') {
+    throw 'admin_users is missing nickname VARCHAR(50)'
+}
+if ($sql -notmatch '(?im)^\s*phone\s+VARCHAR\s*\(\s*20\s*\)') {
+    throw 'customer_services is missing phone VARCHAR(20)'
+}
+if ($sql -match '(?im)^\s*contact_wechat_id\s+') {
+    throw 'products must not keep contact_wechat_id after the customer-service entity migration'
+}
+if ($sql -match '(?im)^\s*contact_qr_media_id\s+') {
+    throw 'products must not keep contact_qr_media_id after the customer-service entity migration'
+}
+if ($sql -notmatch '(?is)CREATE\s+TABLE\s+global_contact_services\s*\((.*?)\)\s*ENGINE') {
+    throw 'Missing global_contact_services table'
+}
+if ($sql -notmatch '(?is)CREATE\s+TABLE\s+product_contact_services\s*\((.*?)\)\s*ENGINE') {
+    throw 'Missing product_contact_services table'
 }
 if ($sql -notmatch '(?i)FOREIGN KEY') {
     throw 'Expected foreign key constraints were not found'

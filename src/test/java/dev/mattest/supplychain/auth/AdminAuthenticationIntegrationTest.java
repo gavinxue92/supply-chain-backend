@@ -80,6 +80,7 @@ class AdminAuthenticationIntegrationTest {
         assertThat(openApi.getBody()).contains(
                 "/api/v1/health",
                 "/api/v1/admin/auth/login",
+                "/api/v1/admin/auth/me",
                 "/api/v1/admin/accounts",
                 "/api/v1/admin/categories",
                 "/api/v1/admin/products",
@@ -168,6 +169,71 @@ class AdminAuthenticationIntegrationTest {
                 new HttpEntity<>(adminHeaders),
                 String.class);
         assertThat(revokedSession.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void currentUserReturnsTheAuthenticatedSessionIdentityIncludingPasswordChangeRequirement() {
+        ResponseEntity<String> anonymous = rest.getForEntity(
+                url("/api/v1/admin/auth/me"), String.class);
+        assertThat(anonymous.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
+        CsrfCookie csrf = csrfCookie();
+        ResponseEntity<Map<String, Object>> adminLogin = login(
+                "root-admin", "A-strong-test-password-123!", csrf);
+        String adminCookie = cookieValue(adminLogin.getHeaders(), "ADMIN_SESSION");
+
+        ResponseEntity<Map<String, Object>> adminMe = rest.exchange(
+                url("/api/v1/admin/auth/me"),
+                HttpMethod.GET,
+                new HttpEntity<>(authenticatedHeaders(adminCookie, csrf)),
+                new ParameterizedTypeReference<>() {
+                });
+        assertThat(adminMe.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(adminMe.getBody()).containsEntry("success", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> adminData = (Map<String, Object>) adminMe.getBody().get("data");
+        assertThat(adminData)
+                .containsEntry("username", "root-admin")
+                .containsEntry("role", "ADMIN")
+                .containsEntry("mustChangePassword", false);
+
+        HttpHeaders adminHeaders = authenticatedHeaders(adminCookie, csrf);
+        ResponseEntity<Map<String, Object>> createdEditor = rest.exchange(
+                url("/api/v1/admin/accounts"),
+                HttpMethod.POST,
+                new HttpEntity<>(
+                        Map.of(
+                                "username", "first-login-editor",
+                                "temporaryPassword", "Editor-password-123!",
+                                "role", "EDITOR"),
+                        adminHeaders),
+                new ParameterizedTypeReference<>() {
+                });
+        assertThat(createdEditor.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        ResponseEntity<Map<String, Object>> editorLogin = login(
+                "first-login-editor", "Editor-password-123!", csrf);
+        String editorCookie = cookieValue(editorLogin.getHeaders(), "ADMIN_SESSION");
+        ResponseEntity<Map<String, Object>> editorMe = rest.exchange(
+                url("/api/v1/admin/auth/me"),
+                HttpMethod.GET,
+                new HttpEntity<>(authenticatedHeaders(editorCookie, csrf)),
+                new ParameterizedTypeReference<>() {
+                });
+        assertThat(editorMe.getStatusCode()).isEqualTo(HttpStatus.OK);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> editorData = (Map<String, Object>) editorMe.getBody().get("data");
+        assertThat(editorData)
+                .containsEntry("username", "first-login-editor")
+                .containsEntry("role", "EDITOR")
+                .containsEntry("mustChangePassword", true);
+
+        ResponseEntity<String> forbiddenCatalog = rest.exchange(
+                url("/api/v1/admin/products"),
+                HttpMethod.GET,
+                new HttpEntity<>(authenticatedHeaders(editorCookie, csrf)),
+                String.class);
+        assertThat(forbiddenCatalog.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test

@@ -61,10 +61,17 @@ type PublicProductSummary = {
   referencePriceNotice: string;
 };
 
+type PublicContactService = {
+  displayName: string;
+  wechatId: string | null;
+  qrImageUrl: string | null;
+  phone: string | null;
+};
+
 type PublicProductDetail = PublicProductSummary & {
   galleryImageUrls: string[];
   detailHtml: string;
-  contact?: { wechatId: string | null; qrImageUrl: string | null } | null;
+  contact?: { services: PublicContactService[] } | null;
 };
 ```
 
@@ -72,7 +79,7 @@ type PublicProductDetail = PublicProductSummary & {
 - 后端搜索排序为名称完全匹配、名称前缀匹配、关键词匹配、名称包含匹配，随后按运营排序权重和产品 ID 排序。列表接口按运营排序权重和产品 ID 排序。前端保留服务端顺序，不再做本地字母排序。
 - 分类接口只返回启用的可见树；一级停用时其二级分类和产品均不可见。产品只归属一个二级末级分类。
 - 图片 URL 是相对路径，例如 `/api/v1/media/123`。请求或渲染时与当前环境的后端基址组合；不要把开发环境域名写入数据或代码。图片接口返回实际媒体类型及图片字节，可直接用作图片源。
-- `contact` 缺失或为 `null` 表示客服入口关闭或当前无可展示的全局客服配置；非空对象中的微信号、二维码 URL 也可能各自为 `null`。只展示存在的联系渠道。复制微信号时提供明确的复制成功/失败反馈；不得伪造或硬编码客服信息。
+- `contact` 缺失或为 `null` 表示客服入口关闭或当前无可展示客服；`contact.services` 按后端挂载顺序排列，已停用客服不会返回。每项展示 `displayName`，并只展示存在的微信号、二维码或手机号；手机号可展示并支持复制/拨打。复制微信号或手机号时提供明确的成功/失败反馈；不得伪造或硬编码客服信息。
 - `detailHtml` 是后端清洗后的受限 HTML，仅包含基础段落、标题、列表、强调和系统媒体图片。使用小程序兼容的富文本组件展示，不要用 WebView 执行内容，不要自行拼接可执行脚本或注入外链图片。服务端白名单清洗仍是最终安全边界。
 
 ## 小程序开发注意事项
@@ -87,4 +94,4 @@ type PublicProductDetail = PublicProductSummary & {
 
 - 当前没有分页、排序参数、筛选条件扩展、商品详情分享参数或客户端身份接口；不要在联调中按未实现契约开发。
 - API 前缀和字段若有调整，以同版本后端 OpenAPI 3 契约及实际接口变更为准。Swagger UI 只在非生产环境开放。
-- 相关依据：`.scratch/supply-chain-backend/spec.md`、`docs/adr/0002-api-boundaries.md`、`docs/adr/0003-category-model.md`、`docs/adr/0004-product-and-contact-rules.md`、`docs/adr/0005-object-storage.md`、`docs/adr/0006-rich-text.md`。
+- 相关依据：`.scratch/supply-chain-backend/spec.md`、`docs/adr/0002-api-boundaries.md`、`docs/adr/0003-category-model.md`、`docs/adr/0004-product-and-contact-rules.md`、`docs/adr/0005-object-storage.md`、`docs/adr/0006-rich-text.md`、`docs/adr/0011-customer-service-entities.md`、`docs/adr/0012-media-lifecycle.md`。

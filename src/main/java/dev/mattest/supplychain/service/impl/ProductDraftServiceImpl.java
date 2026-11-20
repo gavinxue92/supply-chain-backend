@@ -7,15 +7,19 @@ import dev.mattest.supplychain.entity.Category;
 import dev.mattest.supplychain.entity.MediaResource;
 import dev.mattest.supplychain.entity.Product;
 import dev.mattest.supplychain.entity.ProductGallery;
+import dev.mattest.supplychain.entity.ProductContactServiceLink;
 import dev.mattest.supplychain.entity.ProductKeyword;
 import dev.mattest.supplychain.entity.ProductSpec;
 import dev.mattest.supplychain.mapper.CategoryMapper;
 import dev.mattest.supplychain.mapper.MediaResourceMapper;
+import dev.mattest.supplychain.mapper.ProductContactServiceLinkMapper;
 import dev.mattest.supplychain.mapper.ProductGalleryMapper;
 import dev.mattest.supplychain.mapper.ProductKeywordMapper;
 import dev.mattest.supplychain.mapper.ProductMapper;
 import dev.mattest.supplychain.mapper.ProductSpecMapper;
 import dev.mattest.supplychain.security.AdminPrincipal;
+import dev.mattest.supplychain.service.CustomerServiceService;
+import dev.mattest.supplychain.service.MediaResourceService;
 import dev.mattest.supplychain.service.ProductDraftService;
 import dev.mattest.supplychain.vo.catalog.ProductDraftVO;
 import dev.mattest.supplychain.vo.catalog.ProductSpecVO;
@@ -37,6 +41,9 @@ public class ProductDraftServiceImpl implements ProductDraftService {
     private final CategoryMapper categoryMapper;
     private final MediaResourceMapper mediaResourceMapper;
     private final ProductGalleryMapper galleryMapper;
+    private final ProductContactServiceLinkMapper contactServiceLinkMapper;
+    private final CustomerServiceService customerServiceService;
+    private final MediaResourceService mediaResourceService;
     private final ProductDetailSanitizer detailSanitizer;
     private final AuditLogWriter auditLogWriter;
 
@@ -47,6 +54,9 @@ public class ProductDraftServiceImpl implements ProductDraftService {
             CategoryMapper categoryMapper,
             MediaResourceMapper mediaResourceMapper,
             ProductGalleryMapper galleryMapper,
+            ProductContactServiceLinkMapper contactServiceLinkMapper,
+            CustomerServiceService customerServiceService,
+            MediaResourceService mediaResourceService,
             ProductDetailSanitizer detailSanitizer,
             AuditLogWriter auditLogWriter) {
         this.productMapper = productMapper;
@@ -55,6 +65,9 @@ public class ProductDraftServiceImpl implements ProductDraftService {
         this.categoryMapper = categoryMapper;
         this.mediaResourceMapper = mediaResourceMapper;
         this.galleryMapper = galleryMapper;
+        this.contactServiceLinkMapper = contactServiceLinkMapper;
+        this.customerServiceService = customerServiceService;
+        this.mediaResourceService = mediaResourceService;
         this.detailSanitizer = detailSanitizer;
         this.auditLogWriter = auditLogWriter;
     }
@@ -80,7 +93,7 @@ public class ProductDraftServiceImpl implements ProductDraftService {
     @Transactional
     public ProductDraftVO create(AdminPrincipal actor, ProductDraftRequest request) {
         validateCategory(request.categoryId());
-        ProductDetailSanitizer.SanitizedDetail detail = validateContentMedia(actor.id(), request);
+        ProductDetailSanitizer.SanitizedDetail detail = validateContentMedia(request);
         Product product = new Product();
         product.setName(normalizeOptionalText(request.name()));
         product.setStatus("DRAFT");
@@ -93,6 +106,12 @@ public class ProductDraftServiceImpl implements ProductDraftService {
         replaceSpecifications(product.getId(), request.specifications());
         replaceKeywords(product.getId(), request.keywords());
         replaceGallery(product.getId(), request.galleryMediaIds());
+        replaceProductContactServices(product.getId(), request.contactServiceIds());
+        if (request.contactServiceIds() != null && !request.contactServiceIds().isEmpty()) {
+            auditLogWriter.write(actor.id(), "PRODUCT_CONTACT_SERVICES_UPDATED", "products", product.getId(),
+                    Map.of("contactMode", product.getContactMode(),
+                            "serviceCount", request.contactServiceIds().size()));
+        }
         auditLogWriter.write(actor.id(), "PRODUCT_DRAFT_CREATED", "products", product.getId(),
                 auditSummary(product, request, detail));
         return toView(productMapper.selectById(product.getId()));
@@ -102,8 +121,19 @@ public class ProductDraftServiceImpl implements ProductDraftService {
     @Transactional
     public ProductDraftVO update(AdminPrincipal actor, long id, ProductDraftRequest request) {
         Product product = findEditable(id);
+        List<Long> previousContactServiceIds = contactServiceIds(id);
+        Set<Long> previousMediaIds = new LinkedHashSet<>();
+        if (product.getMainImageMediaId() != null) {
+            previousMediaIds.add(product.getMainImageMediaId());
+        }
+        previousMediaIds.addAll(detailSanitizer.extractMediaIds(product.getDetailHtml()));
+        previousMediaIds.addAll(galleryMapper.selectList(new LambdaQueryWrapper<ProductGallery>()
+                        .eq(ProductGallery::getProductId, id))
+                .stream()
+                .map(ProductGallery::getMediaId)
+                .toList());
         validateCategory(request.categoryId());
-        ProductDetailSanitizer.SanitizedDetail detail = validateContentMedia(actor.id(), request);
+        ProductDetailSanitizer.SanitizedDetail detail = validateContentMedia(request);
         product.setName(normalizeOptionalText(request.name()));
         product.setCategoryId(request.categoryId());
         product.setMainImageMediaId(request.mainImageMediaId());
@@ -114,9 +144,17 @@ public class ProductDraftServiceImpl implements ProductDraftService {
         replaceSpecifications(id, request.specifications());
         replaceKeywords(id, request.keywords());
         replaceGallery(id, request.galleryMediaIds());
+        replaceProductContactServices(id, request.contactServiceIds());
+        List<Long> currentContactServiceIds = contactServiceIds(id);
+        if (!previousContactServiceIds.equals(currentContactServiceIds)) {
+            auditLogWriter.write(actor.id(), "PRODUCT_CONTACT_SERVICES_UPDATED", "products", id,
+                    Map.of("contactMode", product.getContactMode(),
+                            "serviceCount", currentContactServiceIds.size()));
+        }
         if ("PUBLISHED".equals(product.getStatus())) {
             validatePublishable(product, request.specifications());
         }
+        mediaResourceService.cleanupUnreferenced(actor, previousMediaIds);
         auditLogWriter.write(actor.id(),
                 "DRAFT".equals(product.getStatus()) ? "PRODUCT_DRAFT_UPDATED" : "PRODUCT_UPDATED",
                 "products", id,
@@ -184,6 +222,31 @@ public class ProductDraftServiceImpl implements ProductDraftService {
                 Map.of("name", product.getName() == null ? "" : product.getName(),
                         "status", "UNPUBLISHED"));
         return toView(productMapper.selectById(id));
+    }
+
+    @Override
+    @Transactional
+    public void hardDelete(AdminPrincipal actor, long id) {
+        requireAdministrator(actor);
+        Product product = findProduct(id);
+        if (!"ARCHIVED".equals(product.getStatus()) || !Boolean.TRUE.equals(product.getIsDeleted())) {
+            throw conflict("Only archived products can be hard deleted");
+        }
+        Set<Long> mediaIds = new LinkedHashSet<>();
+        if (product.getMainImageMediaId() != null) {
+            mediaIds.add(product.getMainImageMediaId());
+        }
+        mediaIds.addAll(detailSanitizer.extractMediaIds(product.getDetailHtml()));
+        mediaIds.addAll(galleryMapper.selectList(new LambdaQueryWrapper<ProductGallery>()
+                        .eq(ProductGallery::getProductId, id))
+                .stream()
+                .map(ProductGallery::getMediaId)
+                .toList());
+
+        auditLogWriter.write(actor.id(), "PRODUCT_HARD_DELETED", "products", id,
+                Map.of("name", product.getName() == null ? "" : product.getName()));
+        productMapper.deleteById(id);
+        mediaResourceService.cleanupUnreferenced(actor, mediaIds);
     }
 
     private void validatePublishable(Product product, List<ProductSpecRequest> requestedSpecs) {
@@ -285,41 +348,49 @@ public class ProductDraftServiceImpl implements ProductDraftService {
 
     private void applyContactStrategy(Product product, ProductDraftRequest request) {
         String mode = request.contactMode() == null ? "INHERIT" : request.contactMode();
-        String wechatId = normalizeContactText(request.contactWechatId());
-        Long qrMediaId = request.contactQrMediaId();
+        List<Long> serviceIds = request.contactServiceIds();
 
         if ("OVERRIDE".equals(mode)) {
-            if (wechatId == null && qrMediaId == null) {
-                throw badRequest("Product contact override must provide a WeChat ID or QR code");
+            if (serviceIds == null || serviceIds.isEmpty()) {
+                throw badRequest("Product contact override must attach at least one customer service");
             }
-            if (qrMediaId != null && mediaResourceMapper.selectCount(
-                    new LambdaQueryWrapper<MediaResource>()
-                            .eq(MediaResource::getId, qrMediaId)
-                            .eq(MediaResource::getResourceStatus, "READY")) != 1) {
-                throw badRequest("The product customer-service QR code must reference confirmed media");
-            }
+            customerServiceService.findActiveByIds(serviceIds);
         } else if ("INHERIT".equals(mode) || "DISABLED".equals(mode)) {
-            if (wechatId != null || qrMediaId != null) {
-                throw badRequest("Only product contact overrides may contain contact details");
+            if (serviceIds != null && !serviceIds.isEmpty()) {
+                throw badRequest("Only product contact overrides may attach customer services");
             }
         } else {
             throw badRequest("Unsupported product customer-service strategy");
         }
-
         product.setContactMode(mode);
-        product.setContactWechatId("OVERRIDE".equals(mode) ? wechatId : null);
-        product.setContactQrMediaId("OVERRIDE".equals(mode) ? qrMediaId : null);
     }
 
-    private String normalizeContactText(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
+    private void replaceProductContactServices(long productId, List<Long> serviceIds) {
+        contactServiceLinkMapper.delete(new LambdaQueryWrapper<ProductContactServiceLink>()
+                .eq(ProductContactServiceLink::getProductId, productId));
+        if (serviceIds == null || serviceIds.isEmpty()) {
+            return;
         }
-        return value.trim();
+        for (int index = 0; index < serviceIds.size(); index++) {
+            ProductContactServiceLink link = new ProductContactServiceLink();
+            link.setProductId(productId);
+            link.setCustomerServiceId(serviceIds.get(index));
+            link.setSortOrder(index);
+            contactServiceLinkMapper.insert(link);
+        }
     }
 
-    private ProductDetailSanitizer.SanitizedDetail validateContentMedia(
-            long actorId, ProductDraftRequest request) {
+    private List<Long> contactServiceIds(long productId) {
+        return contactServiceLinkMapper.selectList(new LambdaQueryWrapper<ProductContactServiceLink>()
+                        .eq(ProductContactServiceLink::getProductId, productId)
+                        .orderByAsc(ProductContactServiceLink::getSortOrder)
+                        .orderByAsc(ProductContactServiceLink::getId))
+                .stream()
+                .map(ProductContactServiceLink::getCustomerServiceId)
+                .toList();
+    }
+
+    private ProductDetailSanitizer.SanitizedDetail validateContentMedia(ProductDraftRequest request) {
         ProductDetailSanitizer.SanitizedDetail detail =
                 detailSanitizer.sanitize(request.detailText());
         List<Long> galleryMediaIds = request.galleryMediaIds() == null
@@ -341,10 +412,9 @@ public class ProductDraftServiceImpl implements ProductDraftService {
         long availableCount = mediaResourceMapper.selectCount(
                 new LambdaQueryWrapper<MediaResource>()
                         .in(MediaResource::getId, referencedIds)
-                        .eq(MediaResource::getUploadedBy, actorId)
                         .eq(MediaResource::getResourceStatus, "READY"));
         if (availableCount != referencedIds.size()) {
-            throw badRequest("Products may only reference your confirmed media resources");
+            throw badRequest("Products may only reference confirmed media resources");
         }
         return detail;
     }
@@ -404,6 +474,14 @@ public class ProductDraftServiceImpl implements ProductDraftService {
                 .stream()
                 .map(ProductGallery::getMediaId)
                 .toList();
+        List<Long> contactServiceIds = contactServiceLinkMapper.selectList(
+                        new LambdaQueryWrapper<ProductContactServiceLink>()
+                                .eq(ProductContactServiceLink::getProductId, product.getId())
+                                .orderByAsc(ProductContactServiceLink::getSortOrder)
+                                .orderByAsc(ProductContactServiceLink::getId))
+                .stream()
+                .map(ProductContactServiceLink::getCustomerServiceId)
+                .toList();
         return new ProductDraftVO(
                 product.getId(),
                 product.getStatus(),
@@ -414,8 +492,7 @@ public class ProductDraftServiceImpl implements ProductDraftService {
                 galleryMediaIds,
                 keywords,
                 product.getContactMode(),
-                product.getContactWechatId(),
-                product.getContactQrMediaId(),
+                contactServiceIds,
                 product.getSortOrder(),
                 specifications);
     }
@@ -445,8 +522,8 @@ public class ProductDraftServiceImpl implements ProductDraftService {
                 Map.entry("detailImageCount", detail.mediaIds().size()),
                 Map.entry("keywordCount", request.keywords() == null ? 0 : request.keywords().size()),
                 Map.entry("contactMode", product.getContactMode()),
-                Map.entry("hasContactWechatId", product.getContactWechatId() != null),
-                Map.entry("hasContactQrCode", product.getContactQrMediaId() != null),
+                Map.entry("contactServiceCount",
+                        request.contactServiceIds() == null ? 0 : request.contactServiceIds().size()),
                 Map.entry("specificationCount",
                         request.specifications() == null ? 0 : request.specifications().size()),
                 Map.entry("sortOrder", product.getSortOrder()));

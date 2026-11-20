@@ -2,6 +2,7 @@ package dev.mattest.supplychain.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import dev.mattest.supplychain.entity.AdminUser;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
@@ -22,4 +23,7 @@ public interface AdminUserMapper extends BaseMapper<AdminUser> {
             @Param("userId") long userId,
             @Param("maximumAttempts") int maximumAttempts,
             @Param("lockedUntil") LocalDateTime lockedUntil);
+
+    @Delete("DELETE FROM admin_users WHERE id = #{id}")
+    int physicalDeleteById(@Param("id") long id);
 }

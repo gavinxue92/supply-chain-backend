@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,5 +48,15 @@ public class AdminMediaController {
             @AuthenticationPrincipal AdminPrincipal actor,
             @PathVariable long id) {
         return Result.success(mediaResourceService.confirmUpload(actor, id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Parameter(name = "X-XSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+            description = "CSRF token returned by GET /api/v1/admin/auth/csrf.")
+    public Result<Void> delete(
+            @AuthenticationPrincipal AdminPrincipal actor,
+            @PathVariable long id) {
+        mediaResourceService.delete(actor, id);
+        return Result.success(null);
     }
 }

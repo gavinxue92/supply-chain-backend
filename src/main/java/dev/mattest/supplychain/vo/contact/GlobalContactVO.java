@@ -1,4 +1,6 @@
 package dev.mattest.supplychain.vo.contact;
 
-public record GlobalContactVO(long id, String wechatId, Long qrMediaId, String qrImageUrl) {
+import java.util.List;
+
+public record GlobalContactVO(long id, List<CustomerServiceVO> services) {
 }

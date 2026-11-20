@@ -4,6 +4,7 @@
 -- 禁止在本地开发环境之外使用此共享凭据。
 INSERT INTO admin_users (
     username,
+    nickname,
     password_hash,
     role,
     is_active,
@@ -13,6 +14,7 @@ INSERT INTO admin_users (
 )
 SELECT
     'admin',
+    '本地管理员',
     '$2a$10$U9AhzcD2qEavlLPExOJrJ.9rmbjP8K/gYTwUQOILVuseqtg69pmfa',
     'ADMIN',
     TRUE,

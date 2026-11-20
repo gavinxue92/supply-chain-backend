@@ -1,4 +1,6 @@
 package dev.mattest.supplychain.vo.catalog;
 
-public record ContactDisplayVO(String wechatId, String qrImageUrl) {
+import java.util.List;
+
+public record ContactDisplayVO(List<PublicContactServiceVO> services) {
 }

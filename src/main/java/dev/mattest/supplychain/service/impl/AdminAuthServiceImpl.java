@@ -108,7 +108,8 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         session.setExpiresAt(now.plus(sessionTimeout));
         sessionMapper.insert(session);
         return new LoginSession(
-                new LoginVO(user.getUsername(), user.getRole(), Boolean.TRUE.equals(user.getMustChangePassword())),
+                new LoginVO(user.getUsername(), user.getNickname(), user.getRole(),
+                        Boolean.TRUE.equals(user.getMustChangePassword())),
                 token);
     }
 
@@ -164,7 +165,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
             return null;
         }
         return new AdminPrincipal(
-                user.getId(), user.getUsername(), user.getRole(), session.getId(),
+                user.getId(), user.getUsername(), user.getNickname(), user.getRole(), session.getId(),
                 Boolean.TRUE.equals(user.getMustChangePassword()));
     }
 

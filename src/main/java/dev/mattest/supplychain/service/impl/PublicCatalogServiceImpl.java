@@ -2,20 +2,27 @@ package dev.mattest.supplychain.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import dev.mattest.supplychain.entity.Category;
+import dev.mattest.supplychain.entity.CustomerService;
 import dev.mattest.supplychain.entity.GlobalContactConfig;
+import dev.mattest.supplychain.entity.GlobalContactServiceLink;
 import dev.mattest.supplychain.entity.Product;
+import dev.mattest.supplychain.entity.ProductContactServiceLink;
 import dev.mattest.supplychain.entity.ProductGallery;
 import dev.mattest.supplychain.entity.ProductKeyword;
 import dev.mattest.supplychain.entity.ProductSpec;
 import dev.mattest.supplychain.mapper.CategoryMapper;
 import dev.mattest.supplychain.mapper.GlobalContactConfigMapper;
+import dev.mattest.supplychain.mapper.GlobalContactServiceLinkMapper;
+import dev.mattest.supplychain.mapper.ProductContactServiceLinkMapper;
 import dev.mattest.supplychain.mapper.ProductGalleryMapper;
 import dev.mattest.supplychain.mapper.ProductKeywordMapper;
 import dev.mattest.supplychain.mapper.ProductMapper;
 import dev.mattest.supplychain.mapper.ProductSpecMapper;
+import dev.mattest.supplychain.service.CustomerServiceService;
 import dev.mattest.supplychain.service.PublicCatalogService;
 import dev.mattest.supplychain.vo.catalog.PublicCategoryVO;
 import dev.mattest.supplychain.vo.catalog.ContactDisplayVO;
+import dev.mattest.supplychain.vo.catalog.PublicContactServiceVO;
 import dev.mattest.supplychain.vo.catalog.PublicProductDetailVO;
 import dev.mattest.supplychain.vo.catalog.PublicProductSpecVO;
 import dev.mattest.supplychain.vo.catalog.PublicProductSummaryVO;
@@ -43,6 +50,9 @@ public class PublicCatalogServiceImpl implements PublicCatalogService {
     private final ProductSpecMapper specMapper;
     private final ProductGalleryMapper galleryMapper;
     private final GlobalContactConfigMapper globalContactConfigMapper;
+    private final GlobalContactServiceLinkMapper globalContactServiceLinkMapper;
+    private final ProductContactServiceLinkMapper productContactServiceLinkMapper;
+    private final CustomerServiceService customerServiceService;
 
     public PublicCatalogServiceImpl(
             CategoryMapper categoryMapper,
@@ -50,13 +60,19 @@ public class PublicCatalogServiceImpl implements PublicCatalogService {
             ProductKeywordMapper keywordMapper,
             ProductSpecMapper specMapper,
             ProductGalleryMapper galleryMapper,
-            GlobalContactConfigMapper globalContactConfigMapper) {
+            GlobalContactConfigMapper globalContactConfigMapper,
+            GlobalContactServiceLinkMapper globalContactServiceLinkMapper,
+            ProductContactServiceLinkMapper productContactServiceLinkMapper,
+            CustomerServiceService customerServiceService) {
         this.categoryMapper = categoryMapper;
         this.productMapper = productMapper;
         this.keywordMapper = keywordMapper;
         this.specMapper = specMapper;
         this.galleryMapper = galleryMapper;
         this.globalContactConfigMapper = globalContactConfigMapper;
+        this.globalContactServiceLinkMapper = globalContactServiceLinkMapper;
+        this.productContactServiceLinkMapper = productContactServiceLinkMapper;
+        this.customerServiceService = customerServiceService;
     }
 
     @Override
@@ -271,22 +287,50 @@ public class PublicCatalogServiceImpl implements PublicCatalogService {
         if ("DISABLED".equals(mode)) {
             return null;
         }
+        List<Long> serviceIds;
         if ("OVERRIDE".equals(mode)) {
-            return contactDisplay(product.getContactWechatId(), product.getContactQrMediaId());
-        }
-        if (!"INHERIT".equals(mode)) {
+            serviceIds = productContactServiceLinkMapper.selectList(
+                            new LambdaQueryWrapper<ProductContactServiceLink>()
+                                    .eq(ProductContactServiceLink::getProductId, product.getId())
+                                    .orderByAsc(ProductContactServiceLink::getSortOrder)
+                                    .orderByAsc(ProductContactServiceLink::getId))
+                    .stream()
+                    .map(ProductContactServiceLink::getCustomerServiceId)
+                    .toList();
+        } else if ("INHERIT".equals(mode)) {
+            GlobalContactConfig config = globalContactConfigMapper.selectOne(
+                    new LambdaQueryWrapper<GlobalContactConfig>()
+                            .eq(GlobalContactConfig::getConfigKey, "GLOBAL"));
+            if (config == null) {
+                return null;
+            }
+            serviceIds = globalContactServiceLinkMapper.selectList(
+                            new LambdaQueryWrapper<GlobalContactServiceLink>()
+                                    .eq(GlobalContactServiceLink::getGlobalConfigId, config.getId())
+                                    .orderByAsc(GlobalContactServiceLink::getSortOrder)
+                                    .orderByAsc(GlobalContactServiceLink::getId))
+                    .stream()
+                    .map(GlobalContactServiceLink::getCustomerServiceId)
+                    .toList();
+        } else {
             throw new IllegalStateException("Product has an unsupported customer-service strategy");
         }
-        GlobalContactConfig config = globalContactConfigMapper.selectOne(
-                new LambdaQueryWrapper<GlobalContactConfig>()
-                        .eq(GlobalContactConfig::getConfigKey, "GLOBAL"));
-        return config == null ? null : contactDisplay(config.getWechatId(), config.getQrMediaId());
+        if (serviceIds.isEmpty()) {
+            return null;
+        }
+        List<PublicContactServiceVO> services = customerServiceService.findActiveForDisplay(serviceIds)
+                .stream()
+                .map(this::toPublicContact)
+                .toList();
+        return services.isEmpty() ? null : new ContactDisplayVO(services);
     }
 
-    private ContactDisplayVO contactDisplay(String wechatId, Long qrMediaId) {
-        return new ContactDisplayVO(
-                wechatId,
-                qrMediaId == null ? null : mediaUrl(qrMediaId));
+    private PublicContactServiceVO toPublicContact(CustomerService service) {
+        return new PublicContactServiceVO(
+                service.getDisplayName(),
+                service.getWechatId(),
+                service.getQrMediaId() == null ? null : mediaUrl(service.getQrMediaId()),
+                service.getPhone());
     }
 
     private record SearchResult(Product product, int matchRank) {

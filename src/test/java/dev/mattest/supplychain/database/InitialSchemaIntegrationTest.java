@@ -47,7 +47,10 @@ class InitialSchemaIntegrationTest {
                 "product_specs",
                 "product_keywords",
                 "product_gallery",
+                "customer_services",
                 "global_contact_configs",
+                "global_contact_services",
+                "product_contact_services",
                 "audit_logs");
 
         try (Connection connection = openConnection();

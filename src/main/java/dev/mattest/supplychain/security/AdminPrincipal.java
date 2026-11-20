@@ -10,6 +10,7 @@ import java.util.List;
 public record AdminPrincipal(
         long id,
         String username,
+        String nickname,
         String role,
         long sessionId,
         boolean mustChangePassword) implements UserDetails {

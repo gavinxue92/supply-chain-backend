@@ -27,6 +27,7 @@
 - 数据库不再由应用自动迁移；新环境先执行 `scripts/create-database.sql`，再执行 `scripts/schema.sql`。Docker Compose 仅在 MySQL 数据卷首次初始化时自动执行建表脚本；已有数据卷不会自动套用脚本变更。Testcontainers 测试直接执行建表 SQL。
 - 分类/草稿及媒体/产品完整内容 Maven package 通过；相关 HTTP 行为已在隔离的本地 MySQL、MinIO 环境验证。媒体 Testcontainers 测试因本机 Docker pipe 返回空 Engine 信息而未能执行。
 - 产品搜索/排序、分类树筛选及全局/产品客服策略 API 已实现并补充 HTTP 集成测试代码；Maven package 通过，Testcontainers HTTP 验收仍受本机 Docker Engine API 返回空 Engine 元数据阻断。
+- 存量迭代 06（`.scratch/supply-chain-backend/issues/06-account-product-hard-delete-and-media.md`）按 ADR-0010/0011/0012 扩展：账号昵称与硬删除、客服联系人与产品挂载、媒体删除引用计数、产品归档后硬删除。文档与 `scripts/schema.sql` 先行全量更新；每片以 Maven 编译和手动 HTTP 验收为完成条件，不修复 Docker 阻断。
 
 ## 分片重构顺序
 

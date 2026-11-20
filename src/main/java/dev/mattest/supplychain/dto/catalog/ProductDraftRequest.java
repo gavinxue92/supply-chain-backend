@@ -17,8 +17,7 @@ public record ProductDraftRequest(
         @Size(max = 8) List<@NotNull @Positive Long> galleryMediaIds,
         List<@NotBlank @Size(max = 120) String> keywords,
         @Pattern(regexp = "INHERIT|OVERRIDE|DISABLED") String contactMode,
-        @Size(max = 128) String contactWechatId,
-        @Positive Long contactQrMediaId,
+        List<@NotNull @Positive Long> contactServiceIds,
         Integer sortOrder,
         List<@NotNull @Valid ProductSpecRequest> specifications) {
 }

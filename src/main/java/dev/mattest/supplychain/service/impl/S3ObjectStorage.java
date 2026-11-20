@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyExistsException;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
@@ -100,6 +101,19 @@ public class S3ObjectStorage {
                         .contentLength((long) bytes.length)
                         .build(),
                 RequestBody.fromBytes(bytes));
+    }
+
+    public void deleteObject(String objectKey) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(objectKey)
+                    .build());
+        } catch (S3Exception exception) {
+            if (exception.statusCode() != 404) {
+                throw exception;
+            }
+        }
     }
 
     public byte[] readConfirmedObject(String objectKey) {

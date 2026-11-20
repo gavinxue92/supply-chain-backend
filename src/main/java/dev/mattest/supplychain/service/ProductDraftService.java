@@ -15,4 +15,5 @@ public interface ProductDraftService {
     ProductDraftVO unpublish(AdminPrincipal actor, long id);
     ProductDraftVO archive(AdminPrincipal actor, long id);
     ProductDraftVO restore(AdminPrincipal actor, long id);
+    void hardDelete(AdminPrincipal actor, long id);
 }

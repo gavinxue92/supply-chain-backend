@@ -12,8 +12,6 @@ public class GlobalContactConfig {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String configKey;
-    private String wechatId;
-    private Long qrMediaId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     @TableLogic(value = "false", delval = "true")
@@ -23,10 +21,6 @@ public class GlobalContactConfig {
     public void setId(Long id) { this.id = id; }
     public String getConfigKey() { return configKey; }
     public void setConfigKey(String configKey) { this.configKey = configKey; }
-    public String getWechatId() { return wechatId; }
-    public void setWechatId(String wechatId) { this.wechatId = wechatId; }
-    public Long getQrMediaId() { return qrMediaId; }
-    public void setQrMediaId(Long qrMediaId) { this.qrMediaId = qrMediaId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

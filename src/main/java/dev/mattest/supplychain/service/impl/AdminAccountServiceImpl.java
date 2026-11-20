@@ -55,6 +55,7 @@ public class AdminAccountServiceImpl implements AdminAccountService {
         validatePassword(request.temporaryPassword());
         AdminUser user = new AdminUser();
         user.setUsername(request.username());
+        user.setNickname(normalizeNickname(request.nickname()));
         user.setPasswordHash(passwordEncoder.encode(request.temporaryPassword()));
         user.setRole(request.role());
         user.setIsActive(true);
@@ -97,6 +98,61 @@ public class AdminAccountServiceImpl implements AdminAccountService {
         auditLogWriter.write(actor.id(), "ADMIN_ACCOUNT_PASSWORD_RESET", "admin_users", id, Map.of());
     }
 
+    @Override
+    @Transactional
+    public void updateNickname(AdminPrincipal actor, long id, String nickname) {
+        if (id != actor.id()) {
+            requireAdministrator(actor);
+        }
+        AdminUser user = userMapper.selectById(id);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+        }
+        user.setNickname(normalizeNickname(nickname));
+        userMapper.updateById(user);
+        auditLogWriter.write(actor.id(), "ADMIN_ACCOUNT_NICKNAME_UPDATED", "admin_users", id,
+                Map.of("username", user.getUsername(), "nickname", user.getNickname() == null ? "" : user.getNickname()));
+    }
+
+    @Override
+    @Transactional
+    public void hardDelete(AdminPrincipal actor, long id) {
+        requireAdministrator(actor);
+        if (id == actor.id()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete the current account");
+        }
+        AdminUser user = userMapper.selectById(id);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+        }
+        if (Boolean.TRUE.equals(user.getIsActive())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Deactivate the account before deleting it");
+        }
+        sessionMapper.physicalDeleteByUserId(id);
+        auditLogWriter.write(actor.id(), "ADMIN_ACCOUNT_HARD_DELETED", "admin_users", id,
+                Map.of("username", user.getUsername(),
+                        "nickname", user.getNickname() == null ? "" : user.getNickname(),
+                        "role", user.getRole()));
+        userMapper.physicalDeleteById(id);
+    }
+
+    private void requireAdministrator(AdminPrincipal actor) {
+        if (!"ADMIN".equals(actor.role())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Administrator role required");
+        }
+    }
+
+    private String normalizeNickname(String nickname) {
+        if (nickname == null || nickname.isBlank()) {
+            return null;
+        }
+        String normalized = nickname.trim();
+        if (normalized.length() > 50) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nickname must not exceed 50 characters");
+        }
+        return normalized;
+    }
+
     private void revokeSessions(long userId) {
         sessionMapper.delete(new LambdaQueryWrapper<AdminSession>()
                 .eq(AdminSession::getAdminUserId, userId));
@@ -113,6 +169,7 @@ public class AdminAccountServiceImpl implements AdminAccountService {
         return new AccountVO(
                 user.getId(),
                 user.getUsername(),
+                user.getNickname(),
                 user.getRole(),
                 Boolean.TRUE.equals(user.getIsActive()),
                 Boolean.TRUE.equals(user.getMustChangePassword()),

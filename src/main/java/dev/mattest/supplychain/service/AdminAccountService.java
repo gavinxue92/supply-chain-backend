@@ -15,4 +15,8 @@ public interface AdminAccountService {
     void deactivate(AdminPrincipal actor, long id);
 
     void resetPassword(AdminPrincipal actor, long id, ResetPasswordRequest request);
+
+    void updateNickname(AdminPrincipal actor, long id, String nickname);
+
+    void hardDelete(AdminPrincipal actor, long id);
 }

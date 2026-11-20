@@ -58,10 +58,22 @@ public class SecurityConfiguration {
                         .requestMatchers("/api/v1/admin/auth/change-password")
                         .access((authentication, context) -> new AuthorizationDecision(
                                 isChangingPassword(authentication.get())))
+                        .requestMatchers("/api/v1/admin/auth/me")
+                        .access((authentication, context) -> new AuthorizationDecision(
+                                isAdminUser(authentication.get())))
                         .requestMatchers(HttpMethod.GET,
                                 "/api/v1/categories", "/api/v1/categories/**", "/api/v1/products/**")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/**").permitAll()
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/accounts/me/nickname")
+                        .access((authentication, context) -> new AuthorizationDecision(
+                                isAdminUser(authentication.get()) && !mustChangePassword(authentication.get())))
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/customer-services")
+                        .access((authentication, context) -> new AuthorizationDecision(
+                                isAdminUser(authentication.get()) && !mustChangePassword(authentication.get())))
+                        .requestMatchers("/api/v1/admin/customer-services/**")
+                        .access((authentication, context) -> new AuthorizationDecision(
+                                isAdmin(authentication.get()) && !mustChangePassword(authentication.get())))
                         .requestMatchers("/api/v1/admin/accounts/**")
                         .access((authentication, context) -> new AuthorizationDecision(
                                 isAdmin(authentication.get()) && !mustChangePassword(authentication.get())))
