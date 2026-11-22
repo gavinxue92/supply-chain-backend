@@ -114,7 +114,7 @@ else
   if [ -d "$ADMIN/.git" ]; then
     cd "$ADMIN"
     OLD="$(git log --oneline -1)"
-    git fetch origin "$BRANCH"
+    git fetch origin "$BRANCH" 2>/dev/null || git fetch --depth 1 origin "$BRANCH"
     git checkout "$BRANCH" >/dev/null 2>&1 || git checkout -b "$BRANCH" "origin/$BRANCH"
     git reset --hard "origin/$BRANCH"
     NEW="$(git log --oneline -1)"
