@@ -18,18 +18,37 @@ cd /d/project/supply-chain/backend && git status -sb
 cd /d/project/supply-chain/backend && mvn -q -DskipTests package
 ```
 
-预期：无输出、退出码 0，生成 `target/supply-chain-backend-0.1.0-SNAPSHOT.jar`。
+预期：无输出、退出码 0，生成 `target/supply-chain-backend-0.1.0-SNAPSHOT.jar`（约 50 MB）。
+
+管理端与小程序也要能构建（它们跟着后端一起发）：
+
+```bash
+cd /d/project/supply-chain/admin && npm run build
+```
+
+```bash
+cd /d/project/supply-chain/miniapp && npm run verify
+```
+
+**Windows 构建陷阱**：如果本机还跑着一个旧的后端实例，`target/` 里的 jar 被占用，Maven 会报
+`Unable to rename ...jar to ...jar.original`，产物只有 198 KB（不是真 jar）。先确认没有残留进程：
+
+```powershell
+Get-Process java -ErrorAction SilentlyContinue | Select-Object Id, StartTime
+```
+
+有就结束它再构建，或直接 `Stop-Process -Id <PID> -Force`。**198 KB 的 jar 一定不对**，看到这个数字就停下排查。
 
 ## 1. 本次变更（2026-11-22 v3）
 
 | 层 | 变更 | 是否需要动作 |
 |---|---|---|
 | 数据库 | 新增 `shop_info`、`search_hot_keywords` 两张表，**无任何 ALTER** | 执行一次迁移脚本 |
-| 后端 | 新增 4 个公开端点 + 2 个管理端点；`SecurityConfiguration` 放行新公开路径 | 重建镜像 |
+| 后端 | 新增 5 个公开端点 + 2 个管理端点；`SecurityConfiguration` 放行新公开路径 | 重建镜像 |
 | 管理端 | 新增「店铺信息」「搜索热词」两页 | 本地 `npm run build`，上线另行处理 |
 | 小程序 | 搜索页常搜/推荐、我的页店铺信息改走接口 | 上传新版本体验版 |
 
-新公开端点：`GET /api/v1/products`、`GET /api/v1/catalog/bootstrap`、`GET /api/v1/search/hot-keywords`、`GET /api/v1/shop`
+新公开端点：`GET /api/v1/products`、`GET /api/v1/products/recommended`、`GET /api/v1/catalog/bootstrap`、`GET /api/v1/search/hot-keywords`、`GET /api/v1/shop`
 新管理端点：`GET|PUT /api/v1/admin/shop`、`GET|PUT /api/v1/admin/search/hot-keywords`
 
 ## 2. 备份（服务器，约 1 分钟）
@@ -148,7 +167,7 @@ curl -s -m 8 http://212.64.84.45:8080/api/v1/categories | head -c 200
 curl -s -m 8 http://212.64.84.45:8080/api/v1/openapi -o /tmp/openapi-after.json && grep -o '"/api/v1[^"]*"' /tmp/openapi-after.json | sort -u | wc -l
 ```
 
-预期：`37` 左右（部署前 33，新增 4 个公开 + 2 个管理路径，其中 products 复用已有路径）。
+预期：`40`（部署前 33，新增 7 条路径）。
 
 ## 6. 前端
 
