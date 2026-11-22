@@ -1,0 +1,6 @@
+# 运维脚本与配置必须在 Linux 上以 LF 结尾
+# 否则 bash 会报：$'\r': command not found
+# .env 值末尾带 \r 会导致密码不匹配，YAML 同理
+*.sh           text eol=lf
+*.example      text eol=lf
+docker-compose*.yml text eol=lf

@@ -37,6 +37,8 @@
 | 决策与约束 | `D:\project\supply-chain\docs\DECISIONS.md` | 21 条决策 + 已作废结论 |
 | 流程与阶段门 | `D:\project\supply-chain\docs\FLOW.md` | 变更分级、G0–G7、验收命令 |
 | Prompt 卡片 | `D:\project\supply-chain\docs\PROMPTS.md` | 含接口演进模板（P4） |
+| 发布与更新 | `docs/DEPLOY.md` | 备份、增量 DDL、换码、验证、回滚 |
+| 上线脚本 | `ops/README.md` | 服务器执行 `ops/deploy.sh` / `ops/update.sh` 的用法 |
 
 导出契约快照：
 
@@ -47,3 +49,11 @@ curl -s http://localhost:8080/api/v1/openapi -o docs/openapi.json
 预期：无输出，文件约 30 KB。
 
 历史文档（旧 ADR、已完成的重构计划、旧版前端对接文档）已归档到 `D:\project\supply-chain\.archive\backend\`，不要参考。
+
+## 运维脚本冻结
+
+`ops/` 下的 `deploy.sh`、`update.sh`、`docker-compose.lite.yml`、`.env.example` 直接操作线上容器与数据库，随后端仓库下发到服务器 `/opt/mattTest/ops/`。
+
+- **只有用户明确说「更新部署脚本」或「更新更新脚本」时，才允许修改这四个文件。** 修 bug、加接口、调字段时不得顺带改。
+- 新增迁移 SQL 不算改脚本：按 `ops/README.md` 第五节要求（幂等、按日期命名）放进 `scripts/migrations/`，`update.sh` 会自动发现并记录到 `schema_migrations` 表。
+- 迁移脚本必须幂等，因为执行失败不会写入记录、下次会重跑；MySQL 8 加列要用 `information_schema` 判断后再 `PREPARE`，模板见 `ops/README.md`。

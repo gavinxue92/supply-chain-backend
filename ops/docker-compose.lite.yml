@@ -1,0 +1,67 @@
+# 最低成本版编排：腾讯云国内试用机（公网 212.64.84.45）自用
+# 用法：复制到 mattTest 根目录（与 .env、scripts/ 同级），然后
+#   docker compose -f docker-compose.lite.yml up -d --build
+#
+# 与外网暴露相关的只有两个端口：
+#   8080  后端 API + 图片展示（小程序与管理端都访问它）
+#   9000  MinIO，供管理端浏览器「预签名直传」图片；不对 9001 控制台开放
+# MySQL 完全不出容器网络。
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: supply_chain
+      MYSQL_USER: supply_chain
+      MYSQL_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?Set SPRING_DATASOURCE_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./scripts/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      # 管理端跑在 localhost:5173，浏览器跨域直传图片，需显式放行
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    ports:
+      - "9000:9000"
+    volumes:
+      - minio-data:/data
+
+  app:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/supply_chain?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci
+      SPRING_DATASOURCE_USERNAME: supply_chain
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?Set in .env}
+      APP_MEDIA_STORAGE_ENDPOINT: http://minio:9000
+      # 预签名上传地址：必须是浏览器能访问到的公网地址
+      APP_MEDIA_STORAGE_PUBLIC_ENDPOINT: ${APP_MEDIA_STORAGE_PUBLIC_ENDPOINT:?Set in .env}
+      APP_MEDIA_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?Set in .env}
+      APP_MEDIA_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set in .env}
+      APP_MEDIA_STORAGE_BUCKET: ${APP_MEDIA_STORAGE_BUCKET:-product-media}
+      # 图片最终展示地址：走后端代理
+      APP_MEDIA_PUBLIC_BASE_URL: ${APP_MEDIA_PUBLIC_BASE_URL:?Set in .env}
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:5173}
+      APP_COOKIE_SECURE: ${APP_COOKIE_SECURE:-false}
+      SWAGGER_UI_ENABLED: ${SWAGGER_UI_ENABLED:-false}
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql-data:
+  minio-data:
