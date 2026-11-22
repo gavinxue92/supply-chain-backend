@@ -1,5 +1,8 @@
 # 发布与更新（现有服务器）
 
+> **日常发版请直接跑 `bash /opt/mattTest/ops/update.sh`**，用法见 `ops/README.md`。
+> 本文是同一套流程的手工分解版：只在脚本不可用、或需要逐步排查时才照着敲，不要和脚本混着做。
+
 目标机器：`212.64.84.45`，仓库在 `/opt/mattTest`，编排文件 `docker-compose.lite.yml`，数据在 `mysql-data` / `minio-data` 两个卷里。
 
 > 镜像构建时带 `-DskipTests`，**测试只在本地跑**。服务器上编译失败才会拦住你，逻辑错误拦不住。
