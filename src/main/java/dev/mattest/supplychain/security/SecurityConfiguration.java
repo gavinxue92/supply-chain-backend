@@ -62,7 +62,10 @@ public class SecurityConfiguration {
                         .access((authentication, context) -> new AuthorizationDecision(
                                 isAdminUser(authentication.get())))
                         .requestMatchers(HttpMethod.GET,
-                                "/api/v1/categories", "/api/v1/categories/**", "/api/v1/products/**")
+                                "/api/v1/categories", "/api/v1/categories/**",
+                                "/api/v1/products", "/api/v1/products/**",
+                                "/api/v1/search/hot-keywords",
+                                "/api/v1/catalog/bootstrap", "/api/v1/shop")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/accounts/me/nickname")

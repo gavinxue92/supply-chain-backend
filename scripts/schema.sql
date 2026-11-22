@@ -2,6 +2,8 @@
 -- Command: mysql -h localhost -P 3306 -u root -p supply_chain < scripts/schema.sql
 -- Every table uses the agreed MySQL 8.0 engine, charset, collation, and common audit fields.
 -- This is a full rebuild script for the development stage; no in-place migration is provided.
+-- 线上库结构更新不要执行本文件（会因表已存在而失败，重建则丢失数据）。
+-- 增量变更请放 scripts/migrations/<日期>-<说明>.sql，可重复执行、只新增不删改。
 
 CREATE TABLE admin_users (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '管理员主键；被 admin_sessions、media_resources.uploaded_by、audit_logs.actor_admin_user_id 引用',
@@ -238,6 +240,35 @@ CREATE TABLE product_gallery (
         FOREIGN KEY (media_id) REFERENCES media_resources (id)
         ON DELETE RESTRICT ON UPDATE RESTRICT,
     CONSTRAINT chk_product_gallery_order CHECK (sort_order < 8)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE search_hot_keywords (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '搜索热词主键；按 sort_order 升序展示',
+    keyword VARCHAR(120) NOT NULL COMMENT '热词文本；由运营在管理端维护，最短 1 字符、最长 120 字符',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT '热词展示顺序；数值越小越靠前',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '记录创建时间',
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '记录最近更新时间',
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE COMMENT '软删除标记；整表替换时旧行置 TRUE',
+    PRIMARY KEY (id),
+    KEY idx_search_hot_keywords_order (is_deleted, sort_order, id) COMMENT '按未删除、展示顺序读取热词',
+    CONSTRAINT chk_search_hot_keywords_keyword CHECK (CHAR_LENGTH(keyword) BETWEEN 1 AND 120)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE shop_info (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '店铺信息主键；仅作为 DEFAULT 单行配置入口',
+    config_key VARCHAR(32) NOT NULL DEFAULT 'DEFAULT' COMMENT '配置标识；DEFAULT 表示单一运营主体的店铺信息',
+    name VARCHAR(120) NOT NULL COMMENT '店铺名称',
+    slogan VARCHAR(200) NOT NULL COMMENT '店铺口号',
+    address VARCHAR(300) NOT NULL COMMENT '店铺地址',
+    hours VARCHAR(120) NOT NULL COMMENT '营业时间',
+    phone VARCHAR(20) NOT NULL COMMENT '联系电话；中国大陆手机号格式',
+    wechat VARCHAR(128) NOT NULL COMMENT '联系微信号',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '记录创建时间',
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '记录最近更新时间',
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE COMMENT '软删除标记；正常配置为 FALSE',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_shop_info_key (config_key) COMMENT '保证只有一行店铺配置',
+    CONSTRAINT chk_shop_info_phone CHECK (REGEXP_LIKE(phone, '^1[3-9][0-9]{9}$'))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE audit_logs (

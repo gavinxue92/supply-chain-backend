@@ -316,9 +316,8 @@ class CatalogAdministrationIntegrationTest {
                 HttpMethod.GET,
                 HttpEntity.EMPTY,
                 new ParameterizedTypeReference<>() {});
-        assertThat((List<?>) rootProducts.getBody().get("data")).hasSize(1);
-        Map<String, Object> publicProduct =
-                ((List<Map<String, Object>>) publicProducts.getBody().get("data")).getFirst();
+        assertThat(pageItems(rootProducts)).hasSize(1);
+        Map<String, Object> publicProduct = pageItems(publicProducts).getFirst();
         assertThat(number(publicProduct.get("id"))).isEqualTo(publishedProductId);
         assertThat(publicProduct).containsEntry("mainImageUrl", "/api/v1/media/" + mediaId)
                 .containsEntry("referencePriceNotice", "参考价仅供参考，实际价格以客服沟通为准");
@@ -408,9 +407,7 @@ class CatalogAdministrationIntegrationTest {
                 HttpMethod.GET,
                 HttpEntity.EMPTY,
                 new ParameterizedTypeReference<>() {});
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> matchedProducts =
-                (List<Map<String, Object>>) searchResults.getBody().get("data");
+        List<Map<String, Object>> matchedProducts = pageItems(searchResults);
         assertThat(number(matchedProducts.getFirst().get("id"))).isEqualTo(exactNameId);
         assertThat(matchedProducts).extracting(product -> number(product.get("id")))
                 .containsSubsequence(prefixLowSortId, publishedProductId, prefixHighSortId, aliasId);
@@ -420,9 +417,7 @@ class CatalogAdministrationIntegrationTest {
                 HttpMethod.GET,
                 HttpEntity.EMPTY,
                 new ParameterizedTypeReference<>() {});
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> parentMatches =
-                (List<Map<String, Object>>) parentFilteredSearch.getBody().get("data");
+        List<Map<String, Object>> parentMatches = pageItems(parentFilteredSearch);
         assertThat(parentMatches).extracting(product -> number(product.get("id")))
                 .doesNotContain(matchedProducts.stream()
                         .filter(product -> "进口牛肉".equals(product.get("name")))
@@ -555,9 +550,7 @@ class CatalogAdministrationIntegrationTest {
                 HttpMethod.GET,
                 HttpEntity.EMPTY,
                 new ParameterizedTypeReference<>() {});
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> hiddenTreeMatches =
-                (List<Map<String, Object>>) hiddenTreeSearch.getBody().get("data");
+        List<Map<String, Object>> hiddenTreeMatches = pageItems(hiddenTreeSearch);
         assertThat(hiddenTreeMatches).extracting(product -> number(product.get("id")))
                 .doesNotContain(publishedProductId, prefixLowSortId, prefixHighSortId,
                         aliasId, exactNameId);
@@ -692,6 +685,13 @@ class CatalogAdministrationIntegrationTest {
         spec.put("name", name);
         spec.put("referencePrice", price);
         return spec;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> pageItems(ResponseEntity<Map<String, Object>> response) {
+        assertThat(response.getBody()).containsEntry("success", true);
+        Map<String, Object> page = (Map<String, Object>) response.getBody().get("data");
+        return (List<Map<String, Object>>) page.get("items");
     }
 
     private Map<String, Object> getData(ResponseEntity<Map<String, Object>> response) {

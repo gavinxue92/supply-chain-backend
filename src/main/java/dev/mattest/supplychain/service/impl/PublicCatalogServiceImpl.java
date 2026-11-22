@@ -10,6 +10,7 @@ import dev.mattest.supplychain.entity.ProductContactServiceLink;
 import dev.mattest.supplychain.entity.ProductGallery;
 import dev.mattest.supplychain.entity.ProductKeyword;
 import dev.mattest.supplychain.entity.ProductSpec;
+import dev.mattest.supplychain.dto.catalog.ProductPageRequest;
 import dev.mattest.supplychain.mapper.CategoryMapper;
 import dev.mattest.supplychain.mapper.GlobalContactConfigMapper;
 import dev.mattest.supplychain.mapper.GlobalContactServiceLinkMapper;
@@ -20,6 +21,8 @@ import dev.mattest.supplychain.mapper.ProductMapper;
 import dev.mattest.supplychain.mapper.ProductSpecMapper;
 import dev.mattest.supplychain.service.CustomerServiceService;
 import dev.mattest.supplychain.service.PublicCatalogService;
+import dev.mattest.supplychain.vo.catalog.BootstrapCategoryVO;
+import dev.mattest.supplychain.vo.catalog.ProductPageVO;
 import dev.mattest.supplychain.vo.catalog.PublicCategoryVO;
 import dev.mattest.supplychain.vo.catalog.ContactDisplayVO;
 import dev.mattest.supplychain.vo.catalog.PublicContactServiceVO;
@@ -92,37 +95,46 @@ public class PublicCatalogServiceImpl implements PublicCatalogService {
     }
 
     @Override
-    public List<PublicProductSummaryVO> listProducts(long categoryId) {
+    public ProductPageVO listProducts(long categoryId, ProductPageRequest pageRequest) {
         List<Long> visibleCategoryIds = visibleCategoryIds(categoryId);
         if (visibleCategoryIds.isEmpty()) {
-            return List.of();
+            return emptyPage(pageRequest);
         }
-        return productMapper.selectList(new LambdaQueryWrapper<Product>()
-                        .eq(Product::getStatus, "PUBLISHED")
-                        .eq(Product::getIsDeleted, false)
-                        .in(Product::getCategoryId, visibleCategoryIds)
-                        .orderByAsc(Product::getSortOrder)
-                        .orderByAsc(Product::getId))
-                .stream()
-                .map(this::toSummary)
-                .toList();
+        List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .eq(Product::getStatus, "PUBLISHED")
+                .eq(Product::getIsDeleted, false)
+                .in(Product::getCategoryId, visibleCategoryIds));
+        return toPage(products, pageRequest);
     }
 
     @Override
-    public List<PublicProductSummaryVO> searchProducts(String query, Long categoryId) {
+    public ProductPageVO listAllProducts(ProductPageRequest pageRequest) {
+        Set<Long> visible = allVisibleCategoryIds();
+        if (visible.isEmpty()) {
+            return emptyPage(pageRequest);
+        }
+        List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .eq(Product::getStatus, "PUBLISHED")
+                .eq(Product::getIsDeleted, false)
+                .in(Product::getCategoryId, visible));
+        return toPage(products, pageRequest);
+    }
+
+    @Override
+    public ProductPageVO searchProducts(String query, Long categoryId, ProductPageRequest pageRequest) {
         String normalizedQuery = query.trim().toLowerCase(Locale.ROOT);
         Set<Long> visibleCategoryIds = categoryId == null
                 ? allVisibleCategoryIds()
                 : new HashSet<>(visibleCategoryIds(categoryId));
         if (visibleCategoryIds.isEmpty()) {
-            return List.of();
+            return emptyPage(pageRequest);
         }
 
         List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
                 .eq(Product::getStatus, "PUBLISHED")
                 .eq(Product::getIsDeleted, false));
         if (products.isEmpty()) {
-            return List.of();
+            return emptyPage(pageRequest);
         }
         Map<Long, List<String>> keywordsByProduct = keywordMapper.selectList(
                         new LambdaQueryWrapper<ProductKeyword>()
@@ -133,7 +145,7 @@ public class PublicCatalogServiceImpl implements PublicCatalogService {
                         ProductKeyword::getProductId,
                         Collectors.mapping(ProductKeyword::getKeyword, Collectors.toList())));
 
-        return products.stream()
+        List<Product> matches = products.stream()
                 .filter(product -> visibleCategoryIds.contains(product.getCategoryId()))
                 .map(product -> new SearchResult(
                         product, matchRank(product, keywordsByProduct.get(product.getId()), normalizedQuery)))
@@ -143,8 +155,97 @@ public class PublicCatalogServiceImpl implements PublicCatalogService {
                                 ? 0
                                 : result.product().getSortOrder())
                         .thenComparingLong(result -> result.product().getId()))
-                .map(result -> toSummary(result.product()))
+                .map(SearchResult::product)
                 .toList();
+        return "default".equals(pageRequest.resolvedSort())
+                ? pageInOrder(matches, pageRequest)
+                : toPage(matches, pageRequest);
+    }
+
+    @Override
+    public List<PublicProductSummaryVO> listRecommended(int limit) {
+        Set<Long> visibleCategoryIds = allVisibleCategoryIds();
+        if (visibleCategoryIds.isEmpty()) {
+            return List.of();
+        }
+        return productMapper.selectList(new LambdaQueryWrapper<Product>()
+                        .eq(Product::getStatus, "PUBLISHED")
+                        .eq(Product::getIsDeleted, false)
+                        .in(Product::getCategoryId, visibleCategoryIds)
+                        .orderByAsc(Product::getSortOrder)
+                        .orderByAsc(Product::getId))
+                .stream()
+                .limit(limit)
+                .map(this::toSummary)
+                .toList();
+    }
+
+    @Override
+    public List<BootstrapCategoryVO> bootstrap() {
+        List<PublicCategoryVO> tree = listCategories();
+        List<Product> all = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .eq(Product::getStatus, "PUBLISHED")
+                .eq(Product::getIsDeleted, false));
+        Map<Long, List<Product>> byCategory = all.stream()
+                .collect(Collectors.groupingBy(Product::getCategoryId));
+        List<BootstrapCategoryVO> result = new java.util.ArrayList<>();
+        for (PublicCategoryVO primary : tree) {
+            List<Product> groupProducts = new java.util.ArrayList<>();
+            List<Long> leafIds = primary.children().isEmpty()
+                    ? List.of(primary.id())
+                    : primary.children().stream().map(PublicCategoryVO::id).toList();
+            for (Long leafId : leafIds) {
+                List<Product> bucket = byCategory.get(leafId);
+                if (bucket != null) {
+                    groupProducts.addAll(bucket);
+                }
+            }
+            groupProducts.sort(Comparator.comparingInt(PublicCatalogServiceImpl::sortOrderOf)
+                    .thenComparingLong(Product::getId));
+            result.add(new BootstrapCategoryVO(primary.id(), primary.name(), primary.sortOrder(),
+                    groupProducts.stream().map(this::toSummary).toList()));
+        }
+        return result;
+    }
+
+    private ProductPageVO toPage(List<Product> products, ProductPageRequest request) {
+        Comparator<Product> comparator = switch (request.resolvedSort()) {
+            case "latest" -> Comparator.comparingLong(Product::getId).reversed();
+            case "price" -> Comparator.comparingLong(this::priceRank)
+                    .thenComparingInt(PublicCatalogServiceImpl::sortOrderOf)
+                    .thenComparingLong(Product::getId);
+            default -> Comparator.comparingInt(PublicCatalogServiceImpl::sortOrderOf)
+                    .thenComparingLong(Product::getId);
+        };
+        List<Product> sorted = products.stream().sorted(comparator).toList();
+        return pageInOrder(sorted, request);
+    }
+
+    private ProductPageVO pageInOrder(List<Product> ordered, ProductPageRequest request) {
+        int page = request.resolvedPage();
+        int pageSize = request.resolvedPageSize();
+        int from = Math.min((page - 1) * pageSize, ordered.size());
+        int to = Math.min(from + pageSize, ordered.size());
+        List<PublicProductSummaryVO> items = ordered.subList(from, to).stream()
+                .map(this::toSummary)
+                .toList();
+        return new ProductPageVO(items, ordered.size(), page, pageSize);
+    }
+
+    private ProductPageVO emptyPage(ProductPageRequest request) {
+        return new ProductPageVO(List.of(), 0, request.resolvedPage(), request.resolvedPageSize());
+    }
+
+    private long priceRank(Product product) {
+        List<PublicProductSpecVO> specs = specifications(product.getId());
+        if (specs.isEmpty() || specs.get(0).referencePrice() == null) {
+            return Long.MAX_VALUE;
+        }
+        return specs.get(0).referencePrice().multiply(BigDecimal.valueOf(100)).longValue();
+    }
+
+    private static int sortOrderOf(Product product) {
+        return product.getSortOrder() == null ? 0 : product.getSortOrder();
     }
 
     @Override

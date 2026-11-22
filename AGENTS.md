@@ -8,16 +8,42 @@
 - `Result<T>`、全局异常处理器（`@RestControllerAdvice`）放在 `common` 包；安全认证过滤器放在 `security` 包。
 - 新增或修改代码必须遵循以上边界；重构已有代码时按垂直切片逐步迁移，不得在新功能中继续扩大违反规范的实现。
 - 新增代码使用的第三方 API 必须在 `pom.xml` 中声明直接依赖，不得依赖偶然的传递依赖；按运行/测试用途设置 scope，并在每个实现任务中同步清理确认无用的直接依赖。新增/调整依赖后验证 Maven 解析和编译。
-- 架构重构按模块分片实施；每片完成后必须通过 Maven 编译，并运行该片受影响的现有接口测试。测试只验证对应 HTTP/API 契约及接口功能，不重复测试无关功能，也不以单元测试替代接口验证。
-- 接口测试应通过 HTTP 调用应用并检查状态码、响应体和必要的可观察结果；不得将 Controller、Service 或 Mapper 的内部实现作为本片验收面。只在对应接口行为发生变化时调整其测试，不扩大到无关测试范围。
-- 执行分片顺序、当前架构违规清单和逐片验证范围见 `docs/architecture-refactoring-plan.md`。
+- 架构重构已完成（2026-11-19 前）：认证、账号、分类、产品、媒体各切片均已迁入标准四层。后续新增功能直接按上述边界写，不再回到旧结构。
+- 接口测试通过 HTTP 调用应用，检查状态码、响应体与可观察结果；不得把 Controller、Service 或 Mapper 的内部实现当验收面。只调整行为确实变化的那部分测试，不扩大范围。
 
-## Agent 技能
+## 跨仓库协作
 
-### 问题跟踪
+本服务端与另外两个仓库同属一个产品，独立仓库、独立部署，不要试图合并：
 
-问题和需求使用 `.scratch/` 下的本地 Markdown 文件跟踪。详见 `docs/agents/issue-tracker.md`。
+- 运营管理端：`D:\project\supply-chain-admin`（Vue 3），只调用 `/api/v1/admin/**`。
+- 小程序：`D:\project\supply-chain-miniapp`（原生微信小程序），只调用公开的 `/api/v1/**`。
 
-### 领域文档
+规则：
 
-采用单上下文布局。详见 `docs/agents/domain.md`。
+- 改 `Admin*Controller` 前，先读 `D:\project\supply-chain-admin\src\api\*.ts` 与 `src/types/*.ts`，确认字段名与调用点；改 `Public*Controller` 前，先读 `D:\project\supply-chain-miniapp\api\catalog.ts` 与 `types\catalog.ts`。Agent 不会自动去读兄弟仓库，必须显式打开这些文件。
+- 接口变更单必须有一列「影响面」，取值为「仅管理端 / 仅小程序 / 两端 / 都不影响」，并写出对应文件路径。
+- 跨端的数据耦合只有三处，改动前两端都要看：`detailHtml` 清洗白名单 ↔ 小程序 `rich-text`；`/api/v1/media/{id}` 相对路径 ↔ 管理端 `src/utils/product-html.ts` 与小程序基址拼接；`global_contact_configs` ↔ 两端客服展示与小程序 `config/shop.ts` 兜底。这三处没有编译期检查，改错只在真机显现。
+- 接口字段以 `GET /api/v1/openapi` 为唯一真源，前端手写类型是抄本；每次改接口后重新导出 `docs/openapi.json` 并提交。
+- 跨端需求在 `D:\project\supply-chain\` 工作区开会话（`backend/` = 本仓，`admin/`、`miniapp/` 为兄弟仓库的 junction）；只改本仓的单端需求仍直接在本仓会话。
+
+## 文档索引
+
+| 文档 | 位置 | 内容 |
+|---|---|---|
+| 架构宪法（本文件） | `AGENTS.md` | 分层、边界、测试接缝 |
+| 接口契约 | `D:\project\supply-chain-miniapp\docs\api-contract.md` | 路径、字段、错误约定、展示规则 |
+| 契约快照 | `docs/openapi.json` | 运行时导出的 OpenAPI，唯一真源 |
+| 产品与业务规则 | `D:\project\supply-chain\docs\PRODUCT.md` | 角色、状态机、15 条业务规则 |
+| 决策与约束 | `D:\project\supply-chain\docs\DECISIONS.md` | 21 条决策 + 已作废结论 |
+| 流程与阶段门 | `D:\project\supply-chain\docs\FLOW.md` | 变更分级、G0–G7、验收命令 |
+| Prompt 卡片 | `D:\project\supply-chain\docs\PROMPTS.md` | 含接口演进模板（P4） |
+
+导出契约快照：
+
+```bash
+curl -s http://localhost:8080/api/v1/openapi -o docs/openapi.json
+```
+
+预期：无输出，文件约 30 KB。
+
+历史文档（旧 ADR、已完成的重构计划、旧版前端对接文档）已归档到 `D:\project\supply-chain\.archive\backend\`，不要参考。
