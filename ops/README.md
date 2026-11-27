@@ -195,8 +195,11 @@ PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
 需要跑一次**应用内迁移**才会压成最长边 1440 的 JPEG。新上传的图在上传确认时就已压好，不用管。
 
 ```bash
-cd /opt/mattTest && docker compose -f docker-compose.lite.yml exec app java -jar /app/app.jar --spring.main.web-application-type=none --app.media.migrate=true
+cd /opt/mattTest && docker compose -f docker-compose.lite.yml exec app java -Xmx320m -jar /app/app.jar --spring.main.web-application-type=none --app.media.migrate=true
 ```
+
+`-Xmx320m` 不是可选项：`exec` 会在应用容器里再起一个 JVM，2 核 2G 的机器上不限制容易把内存挤满。
+图片解码峰值约 150 MB，320m 足够；真遇到 `OutOfMemoryError` 再往上调。
 
 预期输出：
 
