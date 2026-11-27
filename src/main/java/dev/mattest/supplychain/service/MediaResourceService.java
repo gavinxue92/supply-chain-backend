@@ -12,7 +12,12 @@ public interface MediaResourceService {
 
     MediaResourceVO confirmUpload(AdminPrincipal actor, long mediaId);
 
-    MediaContent readPublic(long mediaId);
+    /**
+     * 读取公开图片。
+     *
+     * @param width 目标最长边；为 {@code null} 或 0 时返回原图。非法尺寸按原图处理
+     */
+    MediaContent readPublic(long mediaId, Integer width);
 
     void delete(AdminPrincipal actor, long mediaId);
 

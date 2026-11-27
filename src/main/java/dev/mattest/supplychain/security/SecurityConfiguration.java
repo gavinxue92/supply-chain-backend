@@ -68,6 +68,8 @@ public class SecurityConfiguration {
                                 "/api/v1/catalog/bootstrap", "/api/v1/shop")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/**").permitAll()
+                        // CDN 回源和可用性探测用 HEAD，与 GET 同等放行
+                        .requestMatchers(HttpMethod.HEAD, "/api/v1/media/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/accounts/me/nickname")
                         .access((authentication, context) -> new AuthorizationDecision(
                                 isAdminUser(authentication.get()) && !mustChangePassword(authentication.get())))

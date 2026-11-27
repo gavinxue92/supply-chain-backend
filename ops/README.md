@@ -189,6 +189,39 @@ PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
 
 **禁止**在迁移里写 `DROP TABLE`、`TRUNCATE`、不带 `WHERE` 的 `DELETE`。
 
+### 6.1 一次性数据迁移：存量图片转码
+
+`update.sh` 只跑 SQL，不动对象存储里的文件。历史上传的原图是 2048×2048 的无损 PNG（单张 5–6 MB），
+需要跑一次**应用内迁移**才会压成最长边 1440 的 JPEG。新上传的图在上传确认时就已压好，不用管。
+
+```bash
+cd /opt/mattTest && docker compose -f docker-compose.lite.yml exec app java -jar /app/app.jar --spring.main.web-application-type=none --app.media.migrate=true
+```
+
+预期输出：
+
+```text
+Media migration started: 7 ready resources
+Media 6 migrated: 6111854 -> 376763 bytes (old key kept at confirmed/4d9abdaf-...)
+Media migration finished: migrated=7 skipped=0 failed=0
+Media migration saved 36800000 bytes (87% smaller)
+```
+
+四条必须知道的边界：
+
+1. **可重复执行**：已是 JPEG 且小于 400 KB 的直接跳过，重复跑不会反复压缩。
+2. **旧对象保留**：只改数据库里的 `object_key`，MinIO 里的旧图不动。要回滚就把 `object_key` 改回日志打出的旧键。
+3. **`failed` 不代表数据丢失**：那是对象存储里找不到对应文件，数据库记录原样不动。先核对是历史脏数据还是 MinIO 真缺对象。
+4. **参数是启动开关，不要固化**：别写进 `docker-compose.lite.yml` 或 `.env`，否则每次启动都全表扫一遍。
+
+跑完核对还剩多少未压缩的大图：
+
+```bash
+cd /opt/mattTest && docker compose -f docker-compose.lite.yml exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT COUNT(*) FROM media_resources WHERE resource_status=\"READY\" AND media_type=\"image/png\" AND byte_size > 1000000" supply_chain'
+```
+
+预期：`0`。不是 0 就说明还有对象没转到，重复第 6.1 步即可（幂等）。
+
 ## 七、回滚后端
 
 代码层面回滚（只新增表，旧代码不认识新表也无害）：

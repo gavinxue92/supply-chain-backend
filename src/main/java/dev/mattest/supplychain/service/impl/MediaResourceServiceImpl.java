@@ -47,6 +47,8 @@ public class MediaResourceServiceImpl implements MediaResourceService {
     private final S3ObjectStorage storage;
     private final MediaReferenceService mediaReferenceService;
     private final AuditLogWriter auditLogWriter;
+    private final ImageTransformer imageTransformer;
+    private final ThumbnailCache thumbnailCache;
     private final Clock clock;
 
     public MediaResourceServiceImpl(
@@ -54,11 +56,15 @@ public class MediaResourceServiceImpl implements MediaResourceService {
             S3ObjectStorage storage,
             MediaReferenceService mediaReferenceService,
             AuditLogWriter auditLogWriter,
+            ImageTransformer imageTransformer,
+            ThumbnailCache thumbnailCache,
             Clock clock) {
         this.mediaResourceMapper = mediaResourceMapper;
         this.storage = storage;
         this.mediaReferenceService = mediaReferenceService;
         this.auditLogWriter = auditLogWriter;
+        this.imageTransformer = imageTransformer;
+        this.thumbnailCache = thumbnailCache;
         this.clock = clock;
     }
 
@@ -135,8 +141,19 @@ public class MediaResourceServiceImpl implements MediaResourceService {
                 throw badRequest("Uploaded image content does not match the declared content type");
             }
 
+            // 入库即压到可展示的尺寸，避免 2048×2048 的无损 PNG 直接进 CDN 链路。
+            // WebP 解码器不在 JDK 内，normalize 返回 null 时保留原图。
+            byte[] storedBytes = bytes;
+            String storedType = detectedType;
+            byte[] normalized = imageTransformer.normalize(bytes);
+            if (normalized != null) {
+                storedBytes = normalized;
+                storedType = "image/jpeg";
+                LOGGER.info("Normalized media {}: {} -> {} bytes", mediaId, bytes.length, storedBytes.length);
+            }
+
             String confirmedKey = storage.newObjectKey("confirmed");
-            storage.storeConfirmedObject(confirmedKey, detectedType, bytes);
+            storage.storeConfirmedObject(confirmedKey, storedType, storedBytes);
             String publicUrl = storage.publicUrl(mediaId);
             int updated = mediaResourceMapper.update(
                     null,
@@ -145,8 +162,8 @@ public class MediaResourceServiceImpl implements MediaResourceService {
                             .eq(MediaResource::getUploadedBy, actor.id())
                             .eq(MediaResource::getResourceStatus, "PENDING")
                             .set(MediaResource::getObjectKey, confirmedKey)
-                            .set(MediaResource::getMediaType, detectedType)
-                            .set(MediaResource::getByteSize, (long) bytes.length)
+                            .set(MediaResource::getMediaType, storedType)
+                            .set(MediaResource::getByteSize, (long) storedBytes.length)
                             .set(MediaResource::getResourceStatus, "READY")
                             .set(MediaResource::getPublicUrl, publicUrl));
             if (updated != 1) {
@@ -154,12 +171,12 @@ public class MediaResourceServiceImpl implements MediaResourceService {
             }
 
             resource.setObjectKey(confirmedKey);
-            resource.setMediaType(detectedType);
-            resource.setByteSize((long) bytes.length);
+            resource.setMediaType(storedType);
+            resource.setByteSize((long) storedBytes.length);
             resource.setResourceStatus("READY");
             resource.setPublicUrl(publicUrl);
             auditLogWriter.write(actor.id(), "MEDIA_RESOURCE_REGISTERED", "media_resources", mediaId,
-                    Map.of("mediaType", detectedType, "byteSize", bytes.length));
+                    Map.of("mediaType", storedType, "byteSize", storedBytes.length));
             return toView(resource);
         } finally {
             try {
@@ -172,13 +189,27 @@ public class MediaResourceServiceImpl implements MediaResourceService {
     }
 
     @Override
-    public MediaContent readPublic(long mediaId) {
+    public MediaContent readPublic(long mediaId, Integer width) {
         MediaResource resource = mediaResourceMapper.selectById(mediaId);
         if (resource == null || !"READY".equals(resource.getResourceStatus())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Media resource not found");
         }
-        byte[] bytes = storage.readConfirmedObject(resource.getObjectKey());
-        return new MediaContent(MediaType.parseMediaType(resource.getMediaType()), bytes);
+        byte[] original = storage.readConfirmedObject(resource.getObjectKey());
+        if (width == null || width <= 0) {
+            return new MediaContent(MediaType.parseMediaType(resource.getMediaType()), original);
+        }
+        String cacheKey = mediaId + ":" + width;
+        byte[] cached = thumbnailCache.get(cacheKey);
+        if (cached != null) {
+            return new MediaContent(MediaType.IMAGE_JPEG, cached);
+        }
+        byte[] thumbnail = imageTransformer.toThumbnail(original, width);
+        if (thumbnail == null) {
+            // WebP 等 JDK 不支持的格式退回原图，宁可大一点也不要 404。
+            return new MediaContent(MediaType.parseMediaType(resource.getMediaType()), original);
+        }
+        thumbnailCache.put(cacheKey, thumbnail);
+        return new MediaContent(MediaType.IMAGE_JPEG, thumbnail);
     }
 
     private MediaResource findOwned(long id, long actorId) {
